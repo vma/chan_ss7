@@ -67,6 +67,7 @@ struct linkset {
   int lsi;
   int n_schannels;
   int dni_chunk_limit;
+  int grs;
   struct link* schannels[MAX_LINKS_PER_LINKSET];
   int first_cic, last_cic;
   int init_grs_done;		/* GRS sent? */

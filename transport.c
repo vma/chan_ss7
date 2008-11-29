@@ -40,7 +40,36 @@
 #include <sys/ioctl.h>
 #include <fcntl.h>
 
-#include "kernel/zaptel.h"
+#ifdef DAHDI
+#include <dahdi/user.h>
+#define FAST_HDLC_NEED_TABLES
+#include <dahdi/fasthdlc.h>
+#else
+#include "zaptel.h"
+#define FAST_HDLC_NEED_TABLES
+#include "fasthdlc.h"
+#define DAHDI_AUDIOMODE ZT_AUDIOMODE
+#define DAHDI_AUDIOMODE ZT_AUDIOMODE
+#define DAHDI_BUFFERINFO ZT_BUFFERINFO
+#define DAHDI_DIAL ZT_DIAL
+#define DAHDI_DIAL_OPERATION ZT_DIAL_OPERATION
+#define DAHDI_DIAL_OP_APPEND ZT_DIAL_OP_APPEND
+#define DAHDI_ECHOCANCEL ZT_ECHOCANCEL
+#define DAHDI_ECHOTRAIN ZT_ECHOTRAIN
+#define DAHDI_FLUSH ZT_FLUSH
+#define DAHDI_FLUSH_ALL ZT_FLUSH_ALL
+#define DAHDI_GETEVENT ZT_GETEVENT
+#define DAHDI_GET_BUFINFO ZT_GET_BUFINFO
+#define DAHDI_LAW_ALAW ZT_LAW_ALAW
+#define DAHDI_POLICY_IMMEDIATE ZT_POLICY_IMMEDIATE
+#define DAHDI_SETLAW ZT_SETLAW
+#define DAHDI_SET_BLOCKSIZE ZT_SET_BLOCKSIZE
+#define DAHDI_SET_BUFINFO ZT_SET_BUFINFO
+#define DAHDI_SPECIFY ZT_SPECIFY
+#define dahdi_bufferinfo zt_bufferinfo
+#define dahdi_dialoperation zt_dialoperation
+#endif
+
 
 #ifdef MTP_STANDALONE
 #include "aststubs.h"
@@ -78,14 +107,14 @@ static int transport_socket(int localport, const char* remotehost, int remotepor
 #ifndef MTP_OVER_UDP
 static void set_buffer_info(int fd, int cic, int numbufs)
 {
-  ZT_BUFFERINFO bi;
+  struct dahdi_bufferinfo bi;
   int res;
 
-  bi.txbufpolicy = ZT_POLICY_IMMEDIATE;
-  bi.rxbufpolicy = ZT_POLICY_IMMEDIATE;
+  bi.txbufpolicy = DAHDI_POLICY_IMMEDIATE;
+  bi.rxbufpolicy = DAHDI_POLICY_IMMEDIATE;
   bi.numbufs = numbufs;
   bi.bufsize = AUDIO_READSIZE;
-  res = ioctl(fd, ZT_SET_BUFINFO, &bi);
+  res = ioctl(fd, DAHDI_SET_BUFINFO, &bi);
   if(res) {
     ast_log(LOG_WARNING, "Failure to set buffer policy for circuit %d: %s.\n", cic, strerror(errno));
   }
@@ -93,10 +122,10 @@ static void set_buffer_info(int fd, int cic, int numbufs)
 
 int adjust_buffers(int fd, int cic)
 {
-  ZT_BUFFERINFO bi;
+  struct dahdi_bufferinfo bi;
   int res;
 
-  res = ioctl(fd, ZT_GET_BUFINFO, &bi);
+  res = ioctl(fd, DAHDI_GET_BUFINFO, &bi);
   if(res) {
     ast_log(LOG_WARNING, "Failure to get buffer policy for circuit %d: %s.\n", cic, strerror(errno));
     return 0;
@@ -122,7 +151,7 @@ void set_audiomode(int fd)
   int res;
   int z = 1;
 
-  res = ioctl(fd, ZT_AUDIOMODE, &z);
+  res = ioctl(fd, DAHDI_AUDIOMODE, &z);
   if (res)
     ast_log(LOG_WARNING, "Unable to set fd %d to audiomode\n", fd);
 }
@@ -133,7 +162,7 @@ void clear_audiomode(int fd)
   int res;
   int z = 0;
 
-  res = ioctl(fd, ZT_AUDIOMODE, &z);
+  res = ioctl(fd, DAHDI_AUDIOMODE, &z);
   if (res)
     ast_log(LOG_WARNING, "Unable to clear audiomode on fd %d\n", fd);
 }
@@ -151,20 +180,20 @@ int openchannel(struct link* link, int channel)
     ast_log(LOG_ERROR, "Unable to open /dev/zap/channel: %s.\n", strerror(errno));
     return -1;
   }
-  res = ioctl(fd, ZT_SPECIFY, &zapid);
+  res = ioctl(fd, DAHDI_SPECIFY, &zapid);
   if(res) {
-    ast_log(LOG_WARNING, "Failure in ZT_SPECIFY for circuit %d: %s.\n", cic, strerror(errno));
+    ast_log(LOG_WARNING, "Failure in DAHDI_SPECIFY for circuit %d: %s.\n", cic, strerror(errno));
     return -1;
   }
-  parm = ZT_LAW_ALAW;
-  res = ioctl(fd, ZT_SETLAW, &parm);
+  parm = DAHDI_LAW_ALAW;
+  res = ioctl(fd, DAHDI_SETLAW, &parm);
   if(res) {
     ast_log(LOG_DEBUG, "Failure to set circuit   %d to ALAW: %s.\n", cic, strerror(errno));
     return -1;
   }
   set_buffer_info(fd, cic, 4);
   parm = AUDIO_READSIZE;
-  res = ioctl(fd, ZT_SET_BLOCKSIZE, &parm);
+  res = ioctl(fd, DAHDI_SET_BLOCKSIZE, &parm);
   if(res) {
     ast_log(LOG_WARNING, "Failure to set blocksize for circuit %d: %s.\n", cic, strerror(errno));
     return -1;
@@ -182,8 +211,8 @@ void flushchannel(int fd, int cic)
   int parm, res;
 
   /* Flush timeslot of old data. */
-  parm = ZT_FLUSH_ALL;
-  res = ioctl(fd, ZT_FLUSH, &parm);
+  parm = DAHDI_FLUSH_ALL;
+  res = ioctl(fd, DAHDI_FLUSH, &parm);
   if (res) {
     ast_log(LOG_WARNING, "Unable to flush input on circuit %d\n", cic);
   }
@@ -193,38 +222,32 @@ void flushchannel(int fd, int cic)
 
 int openschannel(struct link* link)
 {
-  ZT_BUFFERINFO bi;
+  struct dahdi_bufferinfo bi;
   char devname[100];
   int fd, res;
   int zapid = link->schannel + link->first_zapid;
 
-#if 1
   sprintf(devname, "/dev/zap/%d", zapid);
   fd = open(devname, O_RDWR);
   if(fd < 0) {
-    ast_log(LOG_WARNING, "Unable to open signalling link zaptel device %s: %s\n",
-            devname, strerror(errno));
-    goto fail;
-  }
-#else
-  devname = "/dev/zap/channel";
-  fd = open(devname, O_RDWR);
-  if(fd < 0) {
-    ast_log(LOG_WARNING, "Unable to open signalling link zaptel device %s: %s\n", devname, strerror(errno));
-    goto fail;
+    char devname2[100];
+    strcpy(devname2, "/dev/zap/channel");
+    fd = open(devname2, O_RDWR);
+    if(fd < 0) {
+      ast_log(LOG_WARNING, "Unable to open signalling link zaptel devices %s and %s: %s\n", devname, devname2, strerror(errno));
+      goto fail;
+    }
+    if (ioctl(fd, DAHDI_SPECIFY, &zapid)) {
+      ast_log(LOG_WARNING, "Unable to specify channel %d: %s\n", zapid, strerror(errno));
+      goto fail;
+    }
   }
 
-  if (ioctl(fd, ZT_SPECIFY, &zapid)) {
-    ast_log(LOG_WARNING, "Unable to specify channel %d: %s\n", zapid, strerror(errno));
-    goto fail;
-  }
-#endif
-
-  bi.txbufpolicy = ZT_POLICY_IMMEDIATE;
-  bi.rxbufpolicy = ZT_POLICY_IMMEDIATE;
+  bi.txbufpolicy = DAHDI_POLICY_IMMEDIATE;
+  bi.rxbufpolicy = DAHDI_POLICY_IMMEDIATE;
   bi.numbufs = NUM_ZAP_BUF;
   bi.bufsize = ZAP_BUF_SIZE;
-  if (ioctl(fd, ZT_SET_BUFINFO, &bi)) {
+  if (ioctl(fd, DAHDI_SET_BUFINFO, &bi)) {
     ast_log(LOG_WARNING, "Unable to set buffering policy on signalling link "
             "zaptel device: %s\n", strerror(errno));
     goto fail;
@@ -243,7 +266,7 @@ int openschannel(struct link* link)
 
 int io_get_zaptel_event(int fd, int* e)
 {
-  return ioctl(fd, ZT_GETEVENT, e);
+  return ioctl(fd, DAHDI_GETEVENT, e);
 }
 
 
@@ -251,17 +274,17 @@ int io_enable_echo_cancellation(int fd, int cic, int echocan_taps, int echocan_t
 {
   int res, parm = 1;
 
-  res = ioctl(fd, ZT_AUDIOMODE, &parm);
+  res = ioctl(fd, DAHDI_AUDIOMODE, &parm);
   if (res)
     ast_log(LOG_WARNING, "Unable to set fd %d to audiomode\n", fd);
 
-  res = ioctl(fd, ZT_ECHOCANCEL, &echocan_taps);
+  res = ioctl(fd, DAHDI_ECHOCANCEL, &echocan_taps);
   if (res) {
     ast_log(LOG_WARNING, "Unable to enable echo cancellation on cic %d\n", cic);
     return res;
   } else {
     ast_log(LOG_DEBUG, "Enabled echo cancellation on cic %d\n", cic);
-    res = ioctl(fd, ZT_ECHOTRAIN, &echocan_train);
+    res = ioctl(fd, DAHDI_ECHOTRAIN, &echocan_train);
     if (res) {
       ast_log(LOG_WARNING, "Unable to request echo training on cic %d\n", cic);
       return res;
@@ -277,7 +300,7 @@ void io_disable_echo_cancellation(int fd, int cic)
   int res;
   int x = 0;
 
-  res = ioctl(fd, ZT_ECHOCANCEL, &x);
+  res = ioctl(fd, DAHDI_ECHOCANCEL, &x);
   if (res) 
     ast_log(LOG_WARNING, "Unable to disable echo cancellation on cic %d\n", cic);
   else
@@ -287,14 +310,14 @@ void io_disable_echo_cancellation(int fd, int cic)
 
 int io_send_dtmf(int fd, int cic, char digit)
 {
-  ZT_DIAL_OPERATION zo;
+  struct dahdi_dialoperation zo;
   int res;
 
-  zo.op = ZT_DIAL_OP_APPEND;
+  zo.op = DAHDI_DIAL_OP_APPEND;
   zo.dialstr[0] = 'T';
   zo.dialstr[1] = digit;
   zo.dialstr[2] = 0;
-  res = ioctl(fd, ZT_DIAL, &zo);
+  res = ioctl(fd, DAHDI_DIAL, &zo);
   if(res) {
     ast_log(LOG_WARNING, "DTMF generation of %c failed on CIC=%d.\n", digit, cic);
     return res;
