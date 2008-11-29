@@ -418,6 +418,7 @@ static int load_config_link(struct ast_config *cfg, char* cat)
   link->dpc = 0;
   link->rxgain = 0.0;
   link->txgain = 0.0;
+  link->relaxdtmf = 0;
   *link->mtp3server_host = 0;
   *link->mtp3server_port = 0;
   link->mtp3fd = -1;
@@ -438,6 +439,12 @@ static int load_config_link(struct ast_config *cfg, char* cat)
       }
       link->enabled = strcasecmp(v->value, "yes") == 0;
       has_enabled = 1;
+    } else if(0 == strcasecmp(v->name, "relaxdtmf")) {
+      if ((strcasecmp(v->value, "yes") != 0) && (strcasecmp(v->value, "no") != 0)) {
+        ast_log(LOG_ERROR, "Invalid value '%s' for enabled entry for link '%s'.\n", v->value, link_name);
+        return -1;
+      }
+      link->relaxdtmf = strcasecmp(v->value, "yes") == 0;
     } else if(0 == strcasecmp(v->name, "sltm")) {
       if ((strcasecmp(v->value, "yes") != 0) && (strcasecmp(v->value, "no") != 0)) {
 	ast_log(LOG_ERROR, "Invalid value '%s' for sltm entry for link '%s'.\n", v->value, link_name);

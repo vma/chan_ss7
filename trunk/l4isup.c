@@ -943,9 +943,10 @@ static void t1_start(struct ss7_chan *pvt) {
 
 static int t2_timeout(void *arg) {
   struct ss7_chan *pvt = arg;
+  struct ast_channel *chan = pvt->owner;
 
   ast_log(LOG_NOTICE, "T2 timeout (waiting for RES, user) CIC=%d.\n", pvt->cic);
-  isup_send_rel(pvt, AST_CAUSE_NORMAL_CLEARING); /* Q.764 2.4.3 and Annex A */
+  request_hangup(chan, AST_CAUSE_NORMAL_CLEARING); /* Q.764 2.4.3 and Annex A */
   pvt->t2 = -1;
   return 0;                     /* Remove us from sched */
 }
@@ -994,9 +995,10 @@ static void t5_start(struct ss7_chan *pvt) {
 
 static int t6_timeout(void *arg) {
   struct ss7_chan *pvt = arg;
+  struct ast_channel *chan = pvt->owner;
 
   ast_log(LOG_NOTICE, "T6 timeout (waiting for RES, network) CIC=%d.\n", pvt->cic);
-  isup_send_rel(pvt, AST_CAUSE_RECOVERY_ON_TIMER_EXPIRE);
+  request_hangup(chan, AST_CAUSE_RECOVERY_ON_TIMER_EXPIRE);
   pvt->t6 = -1;
   return 0;                     /* Remove us from sched */
 }
@@ -4293,6 +4295,7 @@ static void init_pvt(struct ss7_chan *pvt, int cic) {
   pvt->is_digital = 0;
   pvt->grs_count = -1;
   pvt->cgb_mask = 0;
+  pvt->law = ZT_LAW_ALAW;
   memset(pvt->context, 0, sizeof(pvt->context));
   memset(pvt->language, 0, sizeof(pvt->language));
 };
@@ -4361,7 +4364,7 @@ static int setup_cic(struct link* link, int channel)
     return -1;
   }
   ast_dsp_set_features(pvt->dsp, DSP_FEATURE_DTMF_DETECT);
-  ast_dsp_digitmode(pvt->dsp, DSP_DIGITMODE_DTMF);
+  ast_dsp_digitmode(pvt->dsp, DSP_DIGITMODE_DTMF | (link->relaxdtmf ? DSP_DIGITMODE_RELAXDTMF : 0));
 
   /* Set gain - Channel must be in audiomode when setting gain */
   set_audiomode(pvt->zaptel_fd);

@@ -1,7 +1,7 @@
 # INSTALL_PREFIX may be overridden to install elsewhere from /usr.
 INSTALL_PREFIX = /usr/local/ss7
 
-VERSION=1.0.91
+VERSION=1.0.93-beta
 
 # INCLUDE may be overridden to find asterisk and zaptel includes in
 # non-standard places.
@@ -12,8 +12,8 @@ CFLAGS=$(INCLUDE) -g -pipe -Wall -Wstrict-prototypes -Wmissing-prototypes -Wmiss
 CFLAGS+=-O4
 #CFLAGS+=-pg
 CFLAGS+=-DCHAN_SS7_VERSION=\"$(VERSION)\"
-#CFLAGS+=-DMTP_OVER_UDP
-#CFLAGS+=-DTESTINPUT
+CFLAGS+=-DMTP_OVER_UDP
+CFLAGS+=-DTESTINPUT
 
 # -DMODULETEST
 
@@ -132,6 +132,10 @@ ss7-mtp-$(VERSION).tar.gz: instdir/sbin/mtp3d \
 ss7-isup-$(VERSION).tar.gz: instdir/lib/modules/chan_ss7.so \
 	instdir/etc/ss7.conf
 	tar -c  --transform='s,instdir/,$(INSTALL_PREFIX)/,' --owner=root --group=root  -zf $@ $^
+
+web: chan_ss7-$(VERSION).tar.gz NEWS
+	cp -p chan_ss7-$(VERSION).tar.gz /home/web/sites/dicea/download/chan_ss7-$(VERSION).tar.gz
+	cp -p NEWS                       /home/web/sites/dicea/download/NEWS-$(VERSION).txt
 
 instdir/sbin/mtp3d: mtp3d
 	install -D -m 755 $^ $@

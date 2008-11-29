@@ -94,6 +94,7 @@ struct link {
   int dpc;
   float rxgain;
   float txgain;
+  int relaxdtmf;
   struct linkset* linkset;
   struct mtp2_state* mtp;
   struct host* on_host;

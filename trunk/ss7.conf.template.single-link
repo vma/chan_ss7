@@ -55,6 +55,14 @@ echocan_train => 350
 ; echocan_taps specifies number of taps, 32, 64, 128 or 256
 echocan_taps => 128
 
+; RX and TX gains
+rxgain => 0.0
+
+txgain => 0.0
+
+; Relax DTMF, yes or no
+
+relaxdtmf => no
 
 [host-gentoo1]
 ; chan_ss7 auto-configures by matching the machines host name with the host-<name>
