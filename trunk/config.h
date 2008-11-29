@@ -173,4 +173,5 @@ struct linkset* find_linkset_for_dpc(int pc, int cic);
 struct linkset* lookup_linkset(char* name);
 struct host* lookup_host_by_addr(struct in_addr);
 struct host* lookup_host_by_id(int hostix);
+struct ast_jb_conf *ss7_get_global_jbconf(void);
 

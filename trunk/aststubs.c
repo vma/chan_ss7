@@ -34,6 +34,7 @@
 #include <asterisk/time.h>
 #include <asterisk/options.h>
 #include <asterisk/utils.h>
+#include "asterisk/abstract_jb.h"
 
 #include "aststubs.h"
 
@@ -51,6 +52,7 @@ char ast_config_AST_CONFIG_DIR[PATH_MAX];
 #undef pthread_mutex_lock
 #undef pthread_mutex_unlock
 #undef pthread_mutex_t
+#undef ast_calloc
 #define ast_mutex_init(m) pthread_mutex_init(m,0)
 #define ast_mutex_lock pthread_mutex_lock
 #define ast_mutex_unlock pthread_mutex_unlock
@@ -438,3 +440,8 @@ int mtp_sched_runq(struct sched_context *con)
 	return numevents;
 }
 
+
+int ast_jb_read_conf(struct ast_jb_conf *conf, char *varname, char *value)
+{
+  return 0;
+}

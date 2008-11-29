@@ -44,6 +44,7 @@
 #include "asterisk/config.h"
 #include "asterisk/logger.h"
 #include "asterisk/strings.h"
+#include "asterisk/abstract_jb.h"
 
 
 #include "config.h"
@@ -61,6 +62,18 @@ struct host hosts[MAX_HOSTS];
 
 int clusterlistenport;
 
+/*! Global jitterbuffer configuration - by default, jb is disabled */
+static struct ast_jb_conf default_jbconf =
+{
+  .flags = 0,
+  .max_size = -1,
+  .resync_threshold = -1,
+  .impl = "",
+};
+
+static struct ast_jb_conf global_jbconf;
+
+
 int is_combined_linkset(struct linkset* ls1, struct linkset* ls2)
 {
   if (ls1 == ls2)
@@ -70,6 +83,27 @@ int is_combined_linkset(struct linkset* ls1, struct linkset* ls2)
     return 1;
   return 0;
 }
+
+static int load_config_jitter(struct ast_config *cfg)
+{
+  struct ast_variable *v;
+
+  /* Copy the default jb config over global_jbconf */
+  memcpy(&global_jbconf, &default_jbconf, sizeof(struct ast_jb_conf));
+
+  v = ast_variable_browse(cfg, "jitter");
+  while(v != NULL) {
+    !ast_jb_read_conf(&global_jbconf, v->name, v->value);
+    v = v->next;
+  }
+
+  return 0;
+}
+
+struct ast_jb_conf *ss7_get_global_jbconf() {
+  return &global_jbconf;
+}
+
 
 
 /* Lookup linkset for destination point code */
@@ -951,6 +985,10 @@ int load_config(int reload)
     else if (strcasecmp(prevcat, "cluster") == 0) {
       if (load_config_cluster(cfg))
 	goto fail;
+    }
+    else if (strcasecmp(prevcat, "jitter") == 0) {
+      if (load_config_jitter(cfg))
+       goto fail;
     }
     else {
       ast_log(LOG_ERROR, "Error invalid config category '%s'.\n", prevcat);

@@ -727,6 +727,7 @@ static struct ast_channel *ss7_new(struct ss7_chan *pvt, int state, char* cid_nu
   chan->type = type;
 #else
   chan = ast_channel_alloc(1, state, cid_num, NULL, NULL, exten, pvt->context, 0, "%s/%s/%d", type, pvt->link->linkset->name, pvt->cic);
+  ast_jb_configure(chan, ss7_get_global_jbconf());
   if(!chan) {
     return NULL;
   }
@@ -1591,6 +1592,8 @@ static int isup_phonenum_digits(char *number, int add_st,
 	d = 0x0b;
       else if ((number[i] == 'c') || (number[i] == 'C'))
 	d = 0x0c;
+      else if ((number[i] == 'e') || (number[i] == 'E'))
+	d = 0x0e;
       else {
 	ast_log(LOG_DEBUG, "Invalid digit '%c' in phonenumber.\n", number[i]);
 	return -1;
@@ -3860,7 +3863,7 @@ static int cmd_block_unblock(int fd, int argc, char *argv[], int do_block) {
     return RESULT_FAILURE;
   }
 
-  while ((first < linkset->last_cic) && (count > 0)) {
+  while ((first <= linkset->last_cic) && (count > 0)) {
     int sup_type_ind = 0x00; /* Maintenance oriented supervision message type */
     unsigned long mask;
     if (count >= 32)
