@@ -117,6 +117,28 @@ int adjust_buffers(int fd, int cic)
 }
 
 
+void set_audiomode(int fd)
+{
+  int res;
+  int z = 1;
+
+  res = ioctl(fd, ZT_AUDIOMODE, &z);
+  if (res)
+    ast_log(LOG_WARNING, "Unable to set fd %d to audiomode\n", fd);
+}
+
+
+void clear_audiomode(int fd)
+{
+  int res;
+  int z = 0;
+
+  res = ioctl(fd, ZT_AUDIOMODE, &z);
+  if (res)
+    ast_log(LOG_WARNING, "Unable to clear audiomode on fd %d\n", fd);
+}
+
+
 int openchannel(struct link* link, int channel)
 {
   int cic = link->first_cic + channel;
@@ -316,6 +338,17 @@ int adjust_buffers(int fd, int cic)
 {
   return 1;
 }
+
+void set_audiomode(int fd)
+{
+}
+
+
+void clear_audiomode(int fd)
+{
+}
+
+
 void flushchannel(int fd, int cic)
 {
 }

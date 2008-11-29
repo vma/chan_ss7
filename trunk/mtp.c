@@ -89,7 +89,7 @@ static struct sched_context *mtp2_sched = NULL;
 
 /* Set true to ask mtp thread to stop */
 static int stop_mtp_thread;
-static int receivepipe[2];
+static int receivepipe[2] = {-1, -1};
 /* Lock-free FIFOs for communication with the MTP thread.
    The sendbuf is polled by the MTP thread whenever the link is ready to
    transmit data (every 2msec). It contains struct mtp_req entries for

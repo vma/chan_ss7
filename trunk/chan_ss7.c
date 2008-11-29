@@ -704,16 +704,18 @@ static void *monitor_main(void *data) {
 	if(fds[i].revents) {
 	  int j;
 	  for (j = 0; j < n_links; j++) {
-	    link = &links[j];
-	    if (link->remote && (link->mtp3fd == fds[i].fd))
+	    if (links[j].remote && (links[j].mtp3fd == fds[i].fd)) {
+	      link = &links[j];
 	      break;
+	    }
 	  }
-	  if (j == n_links)
-	    link = NULL;
 	}
 	else
 	  continue;
 	if(fds[i].revents & (POLLERR|POLLNVAL|POLLHUP)) {
+	  if (i == 0) { /* receivepipe */
+	    ast_log(LOG_ERROR, "poll() return bad revents for receivepipe, 0x%04x\n", fds[i].revents);
+	  }
 	  close(fds[i].fd);
 	  if (link)
 	    link->mtp3fd = -1;
@@ -721,7 +723,7 @@ static void *monitor_main(void *data) {
 	  nres--;
 	  continue;
 	}
-	if(!fds[i].revents & POLLIN)
+	if(!(fds[i].revents & POLLIN))
 	  continue;
 	if (i == 0) {
 	  /* Events waiting in the receive buffer. */

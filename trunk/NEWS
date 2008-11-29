@@ -6,7 +6,12 @@ New in version 1.1
 - Fixed loss of IDLE CICs
 - Fixed segmentation fault when using "combined" attribute for linksets.
 - Fixed block/unblock of last cic not possible bug
-- Jitter buffer handling (thanks to Martin Vít)
+- Fixed handling of dial request supporting multiple audio formats
+- Support for STP signalling, see file ss7.conf.template.single-link for config
+- Jitter buffer handling (thanks to Martin Vít, sponsored by www.voipex.cz)
+- H324M support (thank to Klaus Darilion)
+- Fixed a bug that could cause one-way audio in some cases where DTMF codes are sent.
+- Fixed a bug where receive fifo is no longer being read
 
 New in verion 1.0.0
 - Compatible with asterisk 1.2.x and 1.4.x.

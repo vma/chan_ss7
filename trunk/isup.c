@@ -242,6 +242,7 @@ static int decode_backwards_ind(unsigned char *p, int len, void *data) {
     return 0;
   }
   ind_ptr->called_party_status = (p[0] >> 2) & 0x3;
+  ind_ptr->charge_indicator = p[0] & 0x3;
   return 1;
 }
 
@@ -613,7 +614,7 @@ int decode_isup_msg(struct isup_msg *msg, unsigned char *buf, int len) {
 
     case ISUP_CON:
       return param_decode(buf, len,
-                          IP_BACKWARD_CALL_INDICATORS, 2, NULL, NULL,
+                          IP_BACKWARD_CALL_INDICATORS, 2, decode_backwards_ind, &(msg->con.back_ind),
                           0,
                           0,
 			  IP_OPTIONAL_BACKWARD_CALL_INDICATORS, decode_optional_backward_call_indicators, &(msg->anm.obc_ind),

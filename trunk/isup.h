@@ -72,6 +72,8 @@ enum isup_parameter_code {
   IP_OPTIONAL_BACKWARD_CALL_INDICATORS = 0x29,                /* (3.5) */
   IP_SUSPEND_RESUME_INDICATORS = 0x22,                        /* (3.21) */
   IP_ECHO_CONTROL_INFORMATION = 0x37,                         /* (3.19) */
+  IP_USER_SERVICE_INFORMATION = 0x1d,                         /* (3.57) */
+  IP_ACCESS_TRANSPORT = 0x03,                                 /* (3.3) */
 };
 
 #define PHONENUM_MAX 20
@@ -94,6 +96,7 @@ struct isup_rel_cause {
 /* Fields in a "backwards call indicators" parameter (ACM). */
 struct isup_backwards_call_ind {
   int called_party_status;
+  int charge_indicator;
 };
 
 /* Fields in "redirection information" parameter. */
@@ -140,6 +143,7 @@ struct isup_msg {
     } anm;
     /* Parameters for ISUP_CON */
     struct {
+      struct isup_backwards_call_ind back_ind;
       int obc_ind;
     } con;
     /* Parameters for ISUP_REL. */

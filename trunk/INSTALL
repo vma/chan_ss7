@@ -47,5 +47,23 @@ Issue
 
     load chan_ss7.so
 
-in the Asterisk console.
+in the Asterisk console. Read the file "ASTERISK_VARIABLES" to find out which
+variables are read/set by chan_ss7.
 
+
+Debugging
+---------
+
+chan_ss7 allows dumping of MTP2 packets into a capture 
+file in pcap format (wireshark) using the 
+    ss7 dump start /path/to/filename
+command.
+
+If you want "live" decoding you could dump into a FIFO 
+file and use tshark to capture from the FIFO, e.g.:
+
+  # mkfifo /tmp/mtp2fifo.pcap
+  # asterisk -r
+  > ss7 dump start /tmp/mtp2fifo.pcap
+  > quit
+  # tshark -V -i /tmp/mtp2fifo.pcap
