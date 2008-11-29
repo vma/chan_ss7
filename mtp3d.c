@@ -92,18 +92,19 @@ static FILE *dump_in_fh = NULL;
 static FILE *dump_out_fh = NULL;
 static int dump_do_fisu, dump_do_lssu, dump_do_msu;
 
-static void dump_pcap(FILE *fh, struct mtp_event *event)
+static void dump_pcap(FILE *f, struct mtp_event *event)
 {
+  unsigned int sec  = event->dump.stamp.tv_sec;
   unsigned int usec  = event->dump.stamp.tv_usec - (event->dump.stamp.tv_usec % 1000) +
     event->dump.slinkno*2 + /* encode link number in usecs */
     event->dump.out /* encode direction in/out */;
 
-  fwrite(&event->dump.stamp.tv_sec, sizeof(event->dump.stamp.tv_sec), 1, fh);
-  fwrite(&usec, sizeof(usec), 1, fh);
-  fwrite(&event->len, sizeof(event->len), 1, fh);
-  fwrite(&event->len, sizeof(event->len), 1, fh);
-  fwrite(event->buf, 1, event->len, fh);
-  fflush(fh);
+  fwrite(&sec, sizeof(sec), 1, f);
+  fwrite(&usec, sizeof(usec), 1, f);
+  fwrite(&event->len, sizeof(event->len), 1, f);
+  fwrite(&event->len, sizeof(event->len), 1, f);
+  fwrite(event->buf, 1, event->len, f);
+  fflush(f);
 }
 
 static void init_pcap_file(FILE *f)

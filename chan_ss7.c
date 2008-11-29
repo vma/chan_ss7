@@ -249,11 +249,12 @@ static struct ast_cli_entry my_clis[] = {
 
 static void dump_pcap(FILE *f, struct mtp_event *event)
 {
+  unsigned int sec  = event->dump.stamp.tv_sec;
   unsigned int usec  = event->dump.stamp.tv_usec - (event->dump.stamp.tv_usec % 1000) +
     event->dump.slinkno*2 + /* encode link number in usecs */
     event->dump.out /* encode direction in/out */;
 
-  fwrite(&event->dump.stamp.tv_sec, sizeof(event->dump.stamp.tv_sec), 1, f);
+  fwrite(&sec, sizeof(sec), 1, f);
   fwrite(&usec, sizeof(usec), 1, f);
   fwrite(&event->len, sizeof(event->len), 1, f); /* number of bytes of packet in file */
   fwrite(&event->len, sizeof(event->len), 1, f); /* actual length of packet */
