@@ -39,6 +39,7 @@
 #include <signal.h>
 #include <sys/poll.h>
 #include <sys/ioctl.h>
+#include <math.h>
 
 #include "asterisk/logger.h"
 #include "asterisk/options.h"
@@ -54,6 +55,8 @@
 #include "asterisk/callerid.h"
 #include "asterisk/indications.h"
 #include "asterisk/module.h"
+#include "asterisk/alaw.h"
+#include "asterisk/ulaw.h"
 
 #include "zaptel.h"
 
@@ -150,6 +153,7 @@ struct ss7_chan {
   struct ast_dsp *dsp;
   int grs_count;                /* Count of CICs in ISUP GRS message */
   int cgb_mask;                 /* Mask of CICs in ISUP CGB message */
+  int law;
   char context[AST_MAX_CONTEXT];
   char language[MAX_LANGUAGE];
 };
@@ -4146,6 +4150,97 @@ int cmd_linkset_status(int fd, int argc, char *argv[]) {
     unlock_global();
   }
   return RESULT_SUCCESS;
+}
+
+
+static int fill_gain_alaw(float gain, float linear_gain, int idx) {
+    int val, res;
+
+    if (gain) {
+        val = (int) (((float) AST_ALAW(idx)) * linear_gain);
+        if (val > 32767) val = 32767;
+        if (val < -32767) val = -32767;
+        res = AST_LIN2A(val);
+    } else {
+        res = idx;
+    }
+
+    return res;
+}
+
+
+static int fill_gain_ulaw(float gain, float linear_gain, int idx) {
+    int val, res;
+
+    if (gain) {
+        val = (int) (((float) AST_MULAW(idx)) * linear_gain);
+        if (val > 32767) val = 32767;
+        if (val < -32767) val = -32767;
+        res = AST_LIN2MU(val);
+    } else {
+        res = idx;
+    }
+
+    return res;
+}
+
+
+static int set_gain(struct ss7_chan *pvt, float rx_gain, float tx_gain) {
+
+  struct zt_gains gain;
+  float rx_linear_gain, tx_linear_gain;
+  int res, i;
+
+  memset(&gain, 0, sizeof(gain));
+  gain.chan = 0;
+
+  res = ioctl(pvt->zaptel_fd, ZT_GETGAINS, &gain);
+  if (res) {
+    ast_log(LOG_WARNING, "Failed to read gains: %s\n", strerror(errno));
+    return -1;
+  }
+
+  rx_linear_gain = pow(10.0, rx_gain / 20.0);
+  tx_linear_gain = pow(10.0, tx_gain / 20.0);
+
+  switch (pvt->law) {
+      case ZT_LAW_ALAW:
+          /* Calculate receive-gain alaw-values */
+          for (i = 0; i < (sizeof(gain.rxgain) / sizeof(gain.rxgain[0])); i++) {
+              gain.rxgain[i] = fill_gain_alaw(rx_gain, rx_linear_gain, i);
+          }
+
+          /* Calculate transmit-gain alaw-values */
+          for (i = 0; i < (sizeof(gain.txgain) / sizeof(gain.txgain[0])); i++) {
+              gain.txgain[i] = fill_gain_alaw(tx_gain, tx_linear_gain, i);
+          }
+
+          break;
+
+      case ZT_LAW_MULAW:
+          /* Calculate receive-gain ulaw-values */
+          for (i = 0; i < (sizeof(gain.rxgain) / sizeof(gain.rxgain[0])); i++) {
+              gain.rxgain[i] = fill_gain_ulaw(rx_gain, rx_linear_gain, i);
+          }
+
+          /* Calculate transmit-gain ulaw-values */
+          for (i = 0; i < (sizeof(gain.txgain) / sizeof(gain.txgain[0])); i++) {
+              gain.txgain[i] = fill_gain_ulaw(tx_gain, tx_linear_gain, i);
+          }
+
+          break;
+  }
+
+  ast_log(LOG_DEBUG, "Configuring gain on cic %d (link %s) rxgain: %.1f  txgain: %.1f\n", 
+                    pvt->cic, pvt->link->name, rx_gain, tx_gain);
+
+  /* Set gain-config on one timeslot */
+  res = ioctl(pvt->zaptel_fd, ZT_SETGAINS, &gain);
+  if (res) {
+    ast_log(LOG_WARNING, "Failed to set gains: %s\n", strerror(errno));
+  }
+
+  return res;
 }
 
 

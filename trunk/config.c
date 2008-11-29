@@ -416,6 +416,8 @@ static int load_config_link(struct ast_config *cfg, char* cat)
   link->mtp = NULL;
   link->initial_alignment = 1;
   link->dpc = 0;
+  link->rxgain = 0.0;
+  link->txgain = 0.0;
   *link->mtp3server_host = 0;
   *link->mtp3server_port = 0;
   link->mtp3fd = -1;
@@ -526,6 +528,17 @@ static int load_config_link(struct ast_config *cfg, char* cat)
                             v->value, link_name);
         return -1;
       }
+    } else if(0 == strcasecmp(v->name, "rxgain")) {
+        if (sscanf(v->value, "%f", &link->rxgain) != 1) {
+            ast_log(LOG_WARNING, "Invalid rxgain: %s\n", v->value);
+            link->rxgain = 0.0;
+        }
+
+    } else if(0 == strcasecmp(v->name, "txgain")) {
+        if (sscanf(v->value, "%f", &link->txgain) != 1) {
+            ast_log(LOG_WARNING, "Invalid txgain: %s\n", v->value);
+            link->txgain = 0.0;
+        }
     } else if(0 == strcasecmp(v->name, "initial_alignment")) {
       if ((strcasecmp(v->value, "yes") != 0) && (strcasecmp(v->value, "no") != 0)) {
 	ast_log(LOG_ERROR, "Invalid value '%s' for initial_alignment entry for link '%s'.\n", v->value, link_name);
