@@ -56,6 +56,7 @@ void mtp_sched_context_destroy(struct sched_context *con);
 
 
 #include "astversion.h"
+#include "config.h"
 #include "mtp.h"
 #include "utils.h"
 

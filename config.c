@@ -243,6 +243,15 @@ static int load_config_linkset(struct ast_config *cfg, char* cat)
     } else if(0 == strcasecmp(v->name, "language")) {
       language = v->value;
       has_language = 1;
+    } else if(0 == strcasecmp(v->name, "variant")) {
+      if(0 == strcasecmp(v->value, "CHINA")) {
+	linkset->variant = CHINA_SS7;
+      } else if(0 == strcasecmp(v->value, "ITU")) {
+	linkset->variant = ITU_SS7;
+      } else {
+	ast_log(LOG_ERROR, "Error invalid SS7 variant '%s'.\n", v->value);
+	return -1;
+      }
     } else if(0 == strcasecmp(v->name, "combined")) {
       linkset->combined = strdup(v->value);
     }

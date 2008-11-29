@@ -304,7 +304,7 @@ void l4isup_event(struct mtp_event* event)
   struct isup_msg isup_msg;
   int res;
 
-  res = decode_isup_msg(&isup_msg, event->buf, event->len);
+  res = decode_isup_msg(&isup_msg, event->isup.slink->linkset->variant, event->buf, event->len);
   if(!res) {
     /* Q.764 (2.9.5): Discard invalid message.*/
     ast_log(LOG_NOTICE, "ISUP decoding error, message discarded. (typ=%d)\n", isup_msg.typ);

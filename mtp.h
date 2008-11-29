@@ -150,7 +150,7 @@ void mtp_thread_signal_stop(void);
 struct lffifo *mtp_get_receive_fifo(void);
 struct lffifo **mtp_get_send_fifo(void);
 struct lffifo *mtp_get_control_fifo(void);
-void mtp3_put_label(int sls, int opc, int dpc, unsigned char *buf);
+void mtp3_put_label(int sls, ss7_variant variant, int opc, int dpc, unsigned char *buf);
 int mtp_has_inservice_schannels(struct link*);
 int mtp2_slink_inservice(int linkix);
 int mtp_cmd_linkstatus(char* buff, int timeslot);

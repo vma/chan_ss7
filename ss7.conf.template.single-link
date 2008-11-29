@@ -29,6 +29,9 @@ subservice => auto
 ; The host running the mtp3 service
 ; mtp3server => localhost
 
+; SS7 variant, either ITU or CHINA
+;variant => ITU
+
 [link-l1]
 
 ; This link belongs to linkset siuc
