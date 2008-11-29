@@ -49,3 +49,5 @@ int io_get_zaptel_event(int fd, int* e);
 int io_enable_echo_cancellation(int fd, int cic, int echocan_taps, int echocan_train);
 void io_disable_echo_cancellation(int fd, int cic);
 int io_send_dtmf(int fd, int cic, char digit);
+void set_audiomode(int fd);
+void clear_audiomode(int fd);

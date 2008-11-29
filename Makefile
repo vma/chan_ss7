@@ -1,7 +1,7 @@
 # INSTALL_PREFIX may be overridden to install elsewhere from /usr.
 INSTALL_PREFIX = /usr/local/ss7
 
-VERSION=1.0.10
+VERSION=1.0.90
 
 # INCLUDE may be overridden to find asterisk and zaptel includes in
 # non-standard places.
@@ -115,7 +115,7 @@ clean:
 
 source: chan_ss7-$(VERSION).tar.gz
 
-chan_ss7-$(VERSION).tar.gz: COPYING NEWS INSTALL README Makefile asterisk_safe \
+chan_ss7-$(VERSION).tar.gz: COPYING NEWS INSTALL ASTERISK_VARIABLES README Makefile asterisk_safe \
 	ss7.conf.template.single-link ss7.conf.template.two-links ss7.conf.template.two-linksets ss7.conf.template.two-hosts \
 	$(ALLSRCS) $(HDRS) \
 	safe_mtp3d mtp3d.rc ss7.conf

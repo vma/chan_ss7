@@ -66,7 +66,7 @@
 #define CLUSTER_CONNECT_RETRY_INTERVAL 2000
 #define CLUSTER_CONNECT_TIMEOUT 10000
 
-static int receivepipe[2];
+static int receivepipe[2] = {-1, -1};
 static struct lffifo *receivebuf;
 
 static struct sched_context *cluster_sched = NULL;

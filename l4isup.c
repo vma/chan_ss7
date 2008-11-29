@@ -111,6 +111,8 @@ struct ss7_chan {
   int hangupcause;
   int dohangup;
   int has_inband_ind;
+  int charge_indicator;
+  int is_digital;
   /* Circuit blocking status: {local,remote} {maintenance,hardware}. */
   enum { BL_LM=1, BL_LH=2, BL_RM=4, BL_RH=8, BL_UNEQUIPPED=0x10, BL_LINKDOWN=0x20 } blocked;
   /* Circuit equipped */
@@ -737,6 +739,8 @@ static struct ast_channel *ss7_new(struct ss7_chan *pvt, int state, char* cid_nu
   chan->nativeformats = AST_FORMAT_ALAW;
   chan->rawreadformat = AST_FORMAT_ALAW;
   chan->rawwriteformat = AST_FORMAT_ALAW;
+  chan->readformat = AST_FORMAT_ALAW;
+  chan->writeformat = AST_FORMAT_ALAW;
   ast_setstate(chan, state);
   chan->fds[0] = pvt->zaptel_fd;
 
@@ -786,7 +790,7 @@ static struct ast_channel *ss7_requester(const char *type, int format,
 
   ast_log(LOG_DEBUG, "SS7 request (%s/%s) format = 0x%X.\n", type, arg, format);
 
-  if(format != AST_FORMAT_ALAW) {
+  if(!(format & AST_FORMAT_ALAW)) {
     ast_log(LOG_NOTICE, "Audio format 0x%X not supported by SS7 channel.\n",
             format);
     return NULL;
@@ -888,7 +892,7 @@ static int ss7_indicate(struct ast_channel *chan, int condition, const void* dat
 	    pvt->cic, pvt->has_inband_ind);
     ss7_send_call_progress(pvt, 0x01);
     ast_setstate(chan, AST_STATE_RINGING);
-    res = !pvt->has_inband_ind; /* If there is no indication of in-band information, tell asterisk to generate ringing indication tone */
+    res = !pvt->has_inband_ind && !pvt->is_digital; /* If there is no indication of in-band information, tell asterisk to generate ringing indication tone */
     break;
 
   case AST_CONTROL_PROGRESS:
@@ -901,7 +905,7 @@ static int ss7_indicate(struct ast_channel *chan, int condition, const void* dat
 
   default:
     /* Not supported. */
-    res = - !pvt->has_inband_ind; /* If there is no indication of in-band information, tell asterisk to generate ringing indication tone */
+    res = !pvt->has_inband_ind && !pvt->is_digital; /* If there is no indication of in-band information, tell asterisk to generate ringing indication tone */
   }
 
   ast_mutex_unlock(&pvt->lock);
@@ -1430,6 +1434,9 @@ static void free_cic(struct ss7_chan* pvt)
   pvt->hangupcause = 0;
   pvt->dohangup = 0;
   pvt->has_inband_ind = 0;
+  pvt->charge_indicator = 0;
+  pvt->is_digital = 0;
+  pvt->sending_dtmf = 0;
   pvt->owner = NULL;
   add_to_idlelist(pvt);
 }
@@ -1698,8 +1705,8 @@ int isup_calling_party_num_encode(char *number, int pres_restr,
   }
 
   param[0] = (is_odd << 7) | (is_international ? 4 : 3);
-  param[1] = 0x11; /* Number complete; ISDN number plan; user provided,
-                      verified and passed */
+  param[1] = 0x13; /* Number complete; ISDN number plan; network provided */
+  /* 0x11: Number complete; ISDN number plan; user provided, verified and passed */
   if(pres_restr) {
     param[1] |= (0x1 << 2);
   }
@@ -1743,6 +1750,22 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
   char dnicpy[100]; 
   int pres_restr;
   int res;
+  const char *isdn_h324m;
+  int h324m_usi=0, h324m_llc=0;
+
+  isdn_h324m = pbx_builtin_getvar_helper(chan, "ISDN_H324M");
+  if (isdn_h324m) {
+    ast_verbose(VERBOSE_PREFIX_3 "chan_ss7: isup_send_iam: ISDN_H324M=%s\n", isdn_h324m);
+    if (strstr(isdn_h324m,"USI")) {
+      h324m_usi = 1;
+    } 
+    if (strstr(isdn_h324m,"LLC")) {
+      h324m_llc = 1;
+    }
+    ast_verbose(VERBOSE_PREFIX_3 "chan_ss7: isup_send_iam: h324m_usi=%d, h324m_llc=%d\n", h324m_usi, h324m_llc);
+  } else {
+    ast_verbose(VERBOSE_PREFIX_3 "chan_ss7: isup_send_iam: ISDN_H324M is not set.\n");
+  }
 
   isup_msg_init(msg, sizeof(msg), this_host->opc, peerpc(pvt), pvt->cic, ISUP_IAM, &current);
 
@@ -1751,8 +1774,13 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
   isup_msg_add_fixed(msg, sizeof(msg), &current, param, 1);
 
   /* Forward call indicator Q.763 (3.23). */
-  param[0] = 0x60; /* No end-to-end method , no interworking, no end-to-end
-                      info, ISDN all the way, ISDN not required */
+  if (h324m_usi || h324m_llc) {
+    param[0] = 0xA0; /* No end-to-end method , no interworking, no end-to-end
+                        info, ISDN all the way, ISDN required */
+  } else {
+    param[0] = 0x60; /* No end-to-end method , no interworking, no end-to-end
+                        info, ISDN all the way, ISDN not required */
+  }
   param[1] = 0x01; /* Originating access ISDN, no SCCP indication */
   isup_msg_add_fixed(msg, sizeof(msg), &current, param, 2);
 
@@ -1761,7 +1789,12 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
   isup_msg_add_fixed(msg, sizeof(msg), &current, param, 1);
 
   /* Transmission medium requirement Q.763 (3.54). */
-  param[0] = 0x00; /* Speech */
+  if (h324m_usi || h324m_llc) {
+    param[0] = 0x02; /* 64 kbit/s unrestricted */
+    pvt->is_digital = 1;
+  } else {
+    param[0] = 0x00; /* Speech */
+  }
   isup_msg_add_fixed(msg, sizeof(msg), &current, param, 1);
 
   /* Called party number Q.763 (3.9). */
@@ -1799,6 +1832,28 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
   } else {
     isup_msg_add_optional(msg, sizeof(msg), &current, IP_CALLING_PARTY_NUMBER,
                           param, res);
+  }
+
+  /* Some switches do not understand H.223. Those switches use Access Transport
+   * (Low Layer Compatibility) to signal the video call end-to-end.
+   */
+  if (h324m_usi) {
+    /* User Service Information: Q.763 3.57 */
+    param[0] = 0x88; /* unrestricted digital information */
+    param[1] = 0x90; /* circuit mode, 64 kbit */
+    param[2] = 0xA6; /* UL1, H.223 and H.245 */
+    isup_msg_add_optional(msg, sizeof(msg), &current, IP_USER_SERVICE_INFORMATION,
+                          param, 3);
+  }
+  if (h324m_llc) {
+    /* Access Transport Q.763 3.3 */
+    param[0] = 0x7C; /* unrestricted digital information */
+    param[1] = 0x03; /* circuit mode, 64 kbit */
+    param[2] = 0x88; /* UL1, H.223 and H.245 */
+    param[3] = 0x90; /* UL1, H.223 and H.245 */
+    param[4] = 0xA6; /* UL1, H.223 and H.245 */
+    isup_msg_add_optional(msg, sizeof(msg), &current, IP_ACCESS_TRANSPORT,
+                          param, 5);
   }
 
   if (*rdni) {
@@ -1952,6 +2007,8 @@ static int ss7_hangup(struct ast_channel *chan) {
     io_disable_echo_cancellation(pvt->zaptel_fd, pvt->cic);
     pvt->echocancel = 0;
   }
+  clear_audiomode(pvt->zaptel_fd);
+
   ast_mutex_unlock(&pvt->lock);
   unlock_global();
 
@@ -1995,6 +2052,8 @@ static int ss7_answer(struct ast_channel *chan) {
   /* else: already connected */
   pvt->state = ST_CONNECTED;
   ast_setstate(chan, AST_STATE_UP);
+
+  set_audiomode(pvt->zaptel_fd);
 
   /* Start echo-cancelling if required */
   if (pvt->echocan_start) {
@@ -2150,6 +2209,8 @@ static struct ast_frame *ss7_read(struct ast_channel * chan) {
     pvt->lastread = now;
   }
 #endif
+  pvt->frame.datalen = sofar;
+  pvt->frame.samples = sofar;
   processed_frame = ast_dsp_process(chan, pvt->dsp, &pvt->frame);
 
   ast_mutex_unlock(&pvt->lock);
@@ -2648,14 +2709,16 @@ static void process_iam(struct ss7_chan *pvt, struct isup_msg *inmsg)
     request_hangup(pvt->owner, AST_CAUSE_NORMAL_CLEARING);
   }
 
+  if (inmsg->iam.trans_medium == 0x02) { /* 64kbit unrestricted data */
+	pvt->is_digital = 1;
+  }
   switch (pvt->link->echocancel) {
     case EC_ALLWAYS: 
-      pvt->echocan_start = 1;
+      pvt->echocan_start = !pvt->is_digital;
       break;
 
     case EC_31SPEECH:
-      pvt->echocan_start = 
-        (inmsg->iam.echocontrol  == 0 && inmsg->iam.trans_medium == 0x3);
+      pvt->echocan_start = inmsg->iam.echocontrol  == 0 && inmsg->iam.trans_medium == 0x3;
       break;
   }
 
@@ -2709,6 +2772,8 @@ static void process_acm(struct ss7_chan *pvt, struct isup_msg *inmsg)
   }
   t9_start(chan);
 
+  pvt->charge_indicator = inmsg->acm.back_ind.charge_indicator;
+
   /* Q.764 (2.1.4.6 a): Alert if called_party_status is "subscriber free". */
   if(inmsg->acm.back_ind.called_party_status == 1) {
     ast_queue_frame(chan, &ring_frame);
@@ -2739,6 +2804,8 @@ static void process_anm(struct ss7_chan *pvt, struct isup_msg *inmsg)
     ast_log(LOG_NOTICE, "Missing chan pointer for CIC=%d, processing ANM?!?\n", pvt->cic);
     return;
   }
+
+  set_audiomode(pvt->zaptel_fd);
 
   /* Start echo-cancelling */
   if (pvt->link->echocancel != EC_DISABLED) {
@@ -2777,6 +2844,7 @@ static void process_con(struct ss7_chan *pvt, struct isup_msg *inmsg)
     return;
   }
 
+  pvt->charge_indicator = inmsg->con.back_ind.charge_indicator;
   ast_queue_frame(chan, &answer_frame);
   pvt->state = ST_CONNECTED;
   ast_setstate(chan, AST_STATE_UP);
@@ -4126,6 +4194,8 @@ static void init_pvt(struct ss7_chan *pvt, int cic) {
   pvt->echocan_start = 0;
   pvt->echocancel = 0;
   pvt->has_inband_ind = 0;
+  pvt->charge_indicator = 0;
+  pvt->is_digital = 0;
   pvt->grs_count = -1;
   pvt->cgb_mask = 0;
   memset(pvt->context, 0, sizeof(pvt->context));
@@ -4197,6 +4267,11 @@ static int setup_cic(struct link* link, int channel)
   }
   ast_dsp_set_features(pvt->dsp, DSP_FEATURE_DTMF_DETECT);
   ast_dsp_digitmode(pvt->dsp, DSP_DIGITMODE_DTMF);
+
+  /* Set gain - Channel must be in audiomode when setting gain */
+  set_audiomode(pvt->zaptel_fd);
+  set_gain(pvt, link->rxgain, link->txgain);
+  clear_audiomode(pvt->zaptel_fd);
 
   return 0;
 }
