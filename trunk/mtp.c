@@ -38,9 +38,9 @@
 #include <sys/ioctl.h>
 #include <sys/time.h>
 
-#include "zaptel.h"
+#include "kernel/zaptel.h"
 #define FAST_HDLC_NEED_TABLES
-#include "fasthdlc.h"
+#include "kernel/fasthdlc.h"
 
 #include "config.h"
 #include "mtp.h"
@@ -241,6 +241,11 @@ static void fifo_log(mtp2_t *m, int level, const char *file, int line,
 		     const char *function, const char *format, ...)
      __attribute__ ((format (printf, 6, 7)));
 static void process_msu(struct mtp2_state* m, unsigned char* buf, int len);
+
+static inline ss7_variant variant(mtp2_t* m)
+{
+  return m->link->linkset->variant;
+}
 
 int mtp2_slink_inservice(int ix) {
   struct mtp2_state* m = &mtp2_state[ix];
@@ -900,15 +905,28 @@ static void mtp2_queue_msu(mtp2_t *m, int sio, unsigned char *sif, int len) {
   }
 }
 
-void mtp3_put_label(int sls, int opc, int dpc, unsigned char *buf) {
-  buf[0] = dpc & 0xff;
-  buf[1] = ((dpc & 0x3f00) >> 8) | ((opc & 0x0003) << 6);
-  buf[2] = ((opc & 0x03fc) >> 2);
-  buf[3] = ((opc & 0x3c00) >> 10) | (sls << 4);
+void mtp3_put_label(int sls, ss7_variant variant, int opc, int dpc, unsigned char *buf) {
+  if(variant==ITU_SS7) {
+    buf[0] = dpc & 0xff;
+    buf[1] = ((dpc & 0x3f00) >> 8) | ((opc & 0x0003) << 6);
+    buf[2] = ((opc & 0x03fc) >> 2);
+    buf[3] = ((opc & 0x3c00) >> 10) | (sls << 4);
+  } else { 	/* CHINA SS7 */
+    buf[0] = dpc & 0xff;
+    buf[1] = (dpc & 0xff00) >> 8;
+    buf[2] = (dpc & 0xff0000) >> 16;
+    buf[3] = opc & 0xff;
+    buf[4] = (opc & 0xff00)>>8;
+    buf[5] = (opc & 0xff0000)>>16;
+    buf[6] = sls & 0x0f;
+  }
 }
 
-static void mtp3_set_sls(int sls, unsigned char *buf) {
-  buf[3] = (buf[3] & 0xff0f) | (sls << 4);
+static void mtp3_set_sls(ss7_variant variant, int sls, unsigned char *buf) {
+  if(variant==ITU_SS7)
+    buf[3] = (buf[3] & 0xff0f) | (sls << 4);
+  else /*China SS7 */
+    buf[6] = sls & 0x0f;
 }
 
 /* Handle Q.707 test-and-maintenance procedure.
@@ -936,7 +954,7 @@ static unsigned char sltm_pattern[15] =
     0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff };
 
 static int mtp3_send_sltm(void *data) {
-  unsigned char message_sltm[21];
+  unsigned char message_sltm[24];
   mtp2_t *m = data;
   int subservice = m->subservice;
 
@@ -944,12 +962,19 @@ static int mtp3_send_sltm(void *data) {
     subservice = 0x8;
 
   fifo_log(m, LOG_EVENT, "Sending SLTM to peer on link '%s'....\n", m->name);
-  
-  mtp3_put_label(m->sls, this_host->opc, linkpeerpc(m), message_sltm);
-  message_sltm[4] = 0x11;       /* SLTM */
-  message_sltm[5] = 0xf0;       /* Length: 15 */
-  memcpy(&(message_sltm[6]), sltm_pattern, sizeof(sltm_pattern));
-  mtp2_queue_msu(m, (subservice << 4) | 1, message_sltm, 6 + sizeof(sltm_pattern));
+  mtp3_put_label(m->sls, variant(m), this_host->opc, linkpeerpc(m), message_sltm);
+  if(variant(m)==ITU_SS7)
+  {
+    message_sltm[4] = 0x11;       /* SLTM */
+    message_sltm[5] = 0xf0;       /* Length: 15 */
+    memcpy(&(message_sltm[6]), sltm_pattern, sizeof(sltm_pattern));
+    mtp2_queue_msu(m, (subservice << 4) | 1, message_sltm, 6 + sizeof(sltm_pattern));
+  } else { /* CHINA SS7 */
+    message_sltm[7] = 0x11;       /* SLTM */
+    message_sltm[8] = 0xf0;       /* Length: 15 */
+    memcpy(&(message_sltm[9]), sltm_pattern, sizeof(sltm_pattern));
+    mtp2_queue_msu(m, (subservice << 4) | 1, message_sltm, 9 + sizeof(sltm_pattern));
+  }
 
   /* Set up a timer to wait for SLTA. */
   if(m->sltm_t1 == -1) {        /* Only if it is not already running */
@@ -1129,16 +1154,21 @@ static void mtp2_good_frame(mtp2_t *m, unsigned char *buf, int len) {
       /* Send TRA (traffic restart allowed) immediately, since we have no
          routing capabilities that could be prohibited/restricted. */
       m->state = MTP2_INSERVICE;
-      unsigned char message_tra[5];
+      unsigned char message_tra[8];
       int subservice = m->subservice;
 
       if (subservice == -1)
         subservice = 0x8;
 
       fifo_log(m, LOG_NOTICE, "Sending TRA to peer on link '%s'....\n", m->name);
-      mtp3_put_label(m->sls, this_host->opc, linkpeerpc(m), message_tra);
-      message_tra[4] = 0x17; /* TRA */
-      mtp2_queue_msu(m, (subservice << 4) | 0, message_tra, 5);
+      mtp3_put_label(m->sls, variant(m), this_host->opc, linkpeerpc(m), message_tra);
+      if(variant(m)==ITU_SS7) {
+        message_tra[4] = 0x17; /* TRA */
+        mtp2_queue_msu(m, (subservice << 4) | 0, message_tra, 5);
+      } else { /* China SS7 */
+        message_tra[7] = 0x17; /* TRA */
+        mtp2_queue_msu(m, (subservice << 4) | 0, message_tra, 8);
+      }
 
       /* Send an initial SLTM message, and send it periodic afterwards. */
       if (m->send_sltm) {
@@ -1269,13 +1299,23 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
   int slt_pattern_len;
   int dpc, opc, slc;
   int li;
+  int i,j,k;
 
   li = buf[2] & 0x3f;
   service_indicator = buf[3] & 0xf;
   subservice_field = (buf[3] & 0xf0) >> 4;
-  dpc = buf[4] | ((buf[5] & 0x3f) << 8);
-  opc = ((buf[5] & 0xc0) >> 6) | (buf[6] << 2) | ((buf[7] & 0x0f) << 10);
-  slc = (buf[7] & 0xf0) >> 4;
+  if(variant(m)==ITU_SS7)
+  {
+    dpc = buf[4] | ((buf[5] & 0x3f) << 8);
+    opc = ((buf[5] & 0xc0) >> 6) | (buf[6] << 2) | ((buf[7] & 0x0f) << 10);
+    slc = (buf[7] & 0xf0) >> 4;
+  }else /* CHINA SS7 */
+  {
+    dpc = buf[4] | ((buf[5] & 0xff) << 8) | ((buf[6] & 0xff) << 16);
+    opc = buf[7] | ((buf[8] & 0xff) << 8) | ((buf[9] & 0xff) << 16);
+    slc = buf[10] & 0x0f;
+  }
+  
   if (m->subservice == -1) {
     m->subservice = subservice_field;
     fifo_log(m, LOG_NOTICE, " Using subservice field from incoming MSU: 0x%x\n", subservice_field);
@@ -1284,8 +1324,14 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
   switch(service_indicator) {
   case 0x0:
     /* Signalling network management messages. */
-    h0 = buf[8] & 0xf;
-    h1 = (buf[8] & 0xf0) >> 4;
+    if(variant(m)==ITU_SS7) {
+      h0 = buf[8] & 0xf;
+      h1 = (buf[8] & 0xf0) >> 4;
+    } else {
+      h0 = buf[11] & 0xf;
+      h1 = (buf[11] & 0xf0) >> 4;
+    }
+    	
     tm = findtargetslink(m, slc);
     fifo_log(m, LOG_DEBUG, "Signalling network management, h0=%d, h1=%d, targetslink '%s'\n", h0, h1, tm ? tm->name : "(unknown)");
     if (!tm) {
@@ -1305,9 +1351,15 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
       fifo_log(m, LOG_NOTICE, "Got short SLTM/SLTA (no h0/h1/len), li=%d on link '%s'.\n", li, m->name);
       return;
     }
-    h0 = buf[8] & 0xf;
-    h1 = (buf[8] & 0xf0) >> 4;
-    slt_pattern_len = (buf[9] & 0xf0) >> 4;
+    if(variant(m)==ITU_SS7) {
+      h0 = buf[8] & 0xf;
+      h1 = (buf[8] & 0xf0) >> 4;
+      slt_pattern_len = (buf[9] & 0xf0) >> 4;
+    } else {
+      h0 = buf[11] & 0xf;
+      h1 = (buf[11] & 0xf0) >> 4;
+      slt_pattern_len = (buf[12] & 0xf0) >> 4;
+    }
 
     if(li < 7 + slt_pattern_len) {
       fifo_log(m, LOG_NOTICE, "Got short SLTM/SLTA (short pattern), li=%d, "
@@ -1322,14 +1374,21 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
       int subservice = m->subservice;
 
       if (subservice == -1)
-	subservice = 0x8;
+	      subservice = 0x8;
 
-      mtp3_put_label(slc, dpc, opc, message_slta);
-      message_slta[4] = 0x21;
-      message_slta[5] = slt_pattern_len << 4;
-      memcpy(&(message_slta[6]), &(buf[10]), slt_pattern_len);
-      fifo_log(m, LOG_DEBUG, "Got SLTM, sending SLTA '%s', state=%d.\n", m->name, m->state);
-      mtp2_queue_msu(m, (subservice << 4) | 1, message_slta, 6 + slt_pattern_len);
+      mtp3_put_label(slc, variant(m), dpc, opc, message_slta);
+      if(variant(m)==ITU_SS7) {
+        message_slta[4] = 0x21;
+        message_slta[5] = slt_pattern_len << 4;
+        memcpy(&(message_slta[6]), &(buf[10]), slt_pattern_len);
+        fifo_log(m, LOG_DEBUG, "Got SLTM, sending SLTA '%s', state=%d.\n", m->name, m->state);
+        mtp2_queue_msu(m, (subservice << 4) | 1, message_slta, 6 + slt_pattern_len);
+      } else { /* CHINA SS7 */
+        message_slta[7] = 0x21;
+        message_slta[8] = slt_pattern_len << 4;
+        memcpy(&(message_slta[9]), &(buf[13]), slt_pattern_len);
+        mtp2_queue_msu(m, (subservice << 4) | 1, message_slta, 9 + slt_pattern_len);
+      }
     } else if(h0 == 0x1 && h1 == 0x2) {
       /* signalling link test acknowledgement message. */
 
@@ -1340,9 +1399,14 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
       }
 
       /* Q.707 (2.2) conditions for acceptance of SLTA. */
+      if(variant(m)==ITU_SS7)
+        i = memcmp(sltm_pattern, &(buf[10]), sizeof(sltm_pattern));
+      else	/* CHINESE SS7 */
+        i = memcmp(sltm_pattern, &(buf[13]), sizeof(sltm_pattern));
+
       if(slc == m->sls &&
 	 opc == linkpeerpc(m) && dpc == this_host->opc &&
-	 0 == memcmp(sltm_pattern, &(buf[10]), sizeof(sltm_pattern))) {
+	 0 == i ) {
 	fifo_log(m, LOG_DEBUG, "Got valid SLTA response on link '%s', state=%d.\n", m->name, m->state);
 	l4up(m);
       } else {
@@ -1863,7 +1927,7 @@ void *mtp_thread_main(void *data) {
 		m = targetm;
 	    }
 	    int subservice = SS7_PROTO_ISUP | (m->subservice << 4);
-	    mtp3_set_sls(m->sls, req->buf); // xxx is this necessary?
+	    mtp3_set_sls(variant(m), m->sls, req->buf); // xxx is this necessary?
 	    fifo_log(m, LOG_DEBUG, "Queue MSU, lsi=%d, last_send_ix=%d, linkset=%s, m->link=%s\n", lsi, last_send_ix, linksets[lsi].name, m->link->name);
 	    mtp2_queue_msu(m, subservice, req->buf, req->len);
 #if 1
@@ -2087,11 +2151,12 @@ static void mtp_init_link_data(struct mtp2_state* m) {
 }
 
 static int mtp_init_link(struct mtp2_state* m, struct link* link, int slinkno) {
+  int pcbits = (link->linkset->variant == ITU_SS7) ? 14 : 24;
   mtp_init_link_data(m);
   m->link = link;
   link->mtp = m;
   fifo_log(m, LOG_DEBUG, "init link %s, linkset %s, schannel %d.\n", link->name, link->linkset->name, link->schannel);
-  if(linkpeerpc(m) < 0 || linkpeerpc(m) >= (1<<14)) {
+  if(linkpeerpc(m) < 0 || linkpeerpc(m) >= (1<<pcbits)) {
     ast_log(LOG_ERROR, "Invalid value 0x%x for linkpeerpc.\n", linkpeerpc(m));
     goto fail;
   }
@@ -2134,7 +2199,7 @@ int mtp_init(void) {
   controlbuf = NULL;
   receivepipe[0] = receivepipe[1] = -1;
 
-  if(this_host->opc < 0 || this_host->opc >= (1<<14)) {
+  if(this_host->opc < 0 || this_host->opc >= (1<<24)) { 
     ast_log(LOG_ERROR, "Invalid value 0x%x for this_host->opc.\n", this_host->opc);
     return -1;
   }

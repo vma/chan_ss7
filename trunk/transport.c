@@ -40,16 +40,16 @@
 #include <sys/ioctl.h>
 #include <fcntl.h>
 
-#include "zaptel.h"
+#include "kernel/zaptel.h"
 
 #ifdef MTP_STANDALONE
 #include "aststubs.h"
 #else
 #include "asterisk/logger.h"
 #endif
+#include "config.h"
 #include "mtp.h"
 #include "transport.h"
-#include "config.h"
 #include "utils.h"
 
 

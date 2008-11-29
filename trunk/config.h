@@ -23,6 +23,8 @@
  */
 
 
+typedef enum {ITU_SS7, CHINA_SS7} ss7_variant;
+
 /* Hunting policy. */
 typedef enum { HUNT_ODD_LRU, HUNT_EVEN_MRU, HUNT_SEQ_LTH, HUNT_SEQ_HTL } hunting_policy;
 
@@ -51,6 +53,7 @@ struct linkset {
   struct link* links[MAX_LINKS_PER_LINKSET];
   char* context;
   char* language;
+  ss7_variant variant;
   char* combined;		/* combined linkset name */
   loadshare_type loadshare;
   hunting_policy hunt_policy;

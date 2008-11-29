@@ -1,7 +1,7 @@
 # INSTALL_PREFIX may be overridden to install elsewhere from /usr.
 INSTALL_PREFIX = /usr/local/ss7
 
-VERSION=1.0.93-beta
+VERSION=1.0.94-beta
 
 # INCLUDE may be overridden to find asterisk and zaptel includes in
 # non-standard places.
@@ -12,8 +12,8 @@ CFLAGS=$(INCLUDE) -g -pipe -Wall -Wstrict-prototypes -Wmissing-prototypes -Wmiss
 CFLAGS+=-O4
 #CFLAGS+=-pg
 CFLAGS+=-DCHAN_SS7_VERSION=\"$(VERSION)\"
-CFLAGS+=-DMTP_OVER_UDP
-CFLAGS+=-DTESTINPUT
+#CFLAGS+=-DMTP_OVER_UDP
+#CFLAGS+=-DTESTINPUT
 
 # -DMODULETEST
 

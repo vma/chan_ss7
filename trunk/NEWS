@@ -1,7 +1,7 @@
 This is the NEWS for chan_ss7. This version is maintained by Anders Baekgaard (ab@dicea.dk).
 Please send bug reports, feature requests etc. to chan_ss7@dicea.dk.
 
-New in version 1.0.93-beta
+New in version 1.0.94-beta
 - Fixed buffer overflows in config.c.
 - Fixed loss of IDLE CICs.
 - Fixed segmentation fault when using "combined" attribute for linksets.
@@ -15,6 +15,8 @@ New in version 1.0.93-beta
 - New configuration parameters for link, rxgain and txgain, specifies gain values.
 - New configuration parameter for link, relaxdtmf, specifies whether to use relax dtmf.
 - Fixed handling of timeout after received suspend message.
+- Handling of Chinese SS7 variant: new variant config parameter for linksets (SS7 or CHINA)
+  (Thanks to lin.miao@openvox.cn).
 
 New in verion 1.0.0
 - Compatible with asterisk 1.2.x and 1.4.x.

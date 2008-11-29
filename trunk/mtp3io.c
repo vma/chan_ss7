@@ -36,9 +36,9 @@
 #include <fcntl.h>
 
 #include "aststubs.h"
+#include "config.h"
 #include "mtp.h"
 #include "transport.h"
-#include "config.h"
 #include "utils.h"
 #include "mtp3io.h"
 

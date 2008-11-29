@@ -58,7 +58,7 @@
 #include "asterisk/alaw.h"
 #include "asterisk/ulaw.h"
 
-#include "zaptel.h"
+#include "kernel/zaptel.h"
 
 #include "astversion.h"
 #include "config.h"
@@ -172,7 +172,7 @@ static struct timeval mtp_fifo_full_report;
 /* used by moduletest.c */
 int isup_called_party_num_encode(char *number, unsigned char *param, int plen);
 int isup_called_party_num_encode_no_st(char *number, unsigned char *param, int plen);
-int isup_calling_party_num_encode(char *number, int pres_restr, unsigned char *param, int plen);
+int isup_calling_party_num_encode(char *number, int pres_restr, int si, unsigned char *param, int plen);
 
 static pthread_t continuity_check_thread = AST_PTHREADT_NULL;
 static int continuity_check_thread_running = 0;
@@ -310,6 +310,11 @@ static inline int peerpc(struct ss7_chan* pvt)
   return pvt->link->linkset->dpc;
 }
 
+/* Lookup variant for circuit */
+static inline ss7_variant variant(struct ss7_chan* pvt)
+{
+  return pvt->link->linkset->variant;
+}
 
 static void mtp_enqueue_isup_packet(struct link* link, int cic, unsigned char *msg, int msglen, int reqtyp)
 {
@@ -599,7 +604,7 @@ static void isup_send_rel(struct ss7_chan *pvt, int cause) {
   int current, varptr;
   unsigned char param[2];
 
-  isup_msg_init(msg, sizeof(msg), this_host->opc, peerpc(pvt), pvt->cic, ISUP_REL, &current);
+  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), pvt->cic, ISUP_REL, &current);
   isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 1, 1);
   param[0] = 0x85;              /* Last octet, ITU-T coding, private network */
   param[1] = 0x80 | (cause & 0x7f); /* Last octet */
@@ -615,7 +620,7 @@ static void isup_send_rlc(struct ss7_chan* pvt) {
   int current, varptr;
   int cic = pvt->cic;
 
-  isup_msg_init(msg, sizeof(msg), this_host->opc, peerpc(pvt), cic, ISUP_RLC, &current);
+  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), cic, ISUP_RLC, &current);
   isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 0, 1);
   isup_msg_start_optional_part(msg, sizeof(msg), &varptr, &current);
   isup_msg_end_optional_part(msg, sizeof(msg), &current);
@@ -628,7 +633,7 @@ static void isup_send_rsc(struct ss7_chan* pvt) {
   int current, varptr;
   int cic = pvt->cic;
 
-  isup_msg_init(msg, sizeof(msg), this_host->opc, peerpc(pvt), cic, ISUP_RSC, &current);
+  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), cic, ISUP_RSC, &current);
   isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 0, 0);
   mtp_enqueue_isup(pvt, msg, current);
 }
@@ -640,7 +645,7 @@ static void isup_send_acm(struct ss7_chan* pvt) {
   unsigned char param[2];
   int cic = pvt->cic;
 
-  isup_msg_init(msg, sizeof(msg), this_host->opc, peerpc(pvt), cic, ISUP_ACM, &current);
+  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), cic, ISUP_ACM, &current);
   param[0] = 0x12;
   param[1] = 0x14;
 	   
@@ -690,7 +695,7 @@ static void isup_send_blk(struct ss7_chan *pvt)
   unsigned char msg[MTP_MAX_PCK_SIZE];
   int current, varptr;
   
-  isup_msg_init(msg, sizeof(msg), this_host->opc, peerpc(pvt), pvt->cic, ISUP_BLK, &current);
+  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), pvt->cic, ISUP_BLK, &current);
   isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 0, 0);
   mtp_enqueue_isup(pvt, msg, current);
 }
@@ -862,7 +867,7 @@ static void ss7_send_call_progress(struct ss7_chan *pvt, int value) {
   unsigned char param_backward_ind[2];
   unsigned char param_opt_backw_ind[1];
 
-  isup_msg_init(msg, sizeof(msg), this_host->opc, peerpc(pvt), pvt->cic, ISUP_CPR, &current);
+  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), pvt->cic, ISUP_CPR, &current);
   param[0] = value;              /* Event information */
   param_backward_ind[0] = 0x16;  /* Charge, subscriber free, ordinary subscriber, no end-to-end */
   param_backward_ind[1] = 0x14;  /* No interworking, no end-to-end, ISDN all the way, no
@@ -1333,7 +1338,7 @@ static void isup_send_grs(struct ss7_chan *pvt, int count, int do_timers) {
             "circuits (need at least 2).\n", pvt->cic, count);
     return;
   }
-  isup_msg_init(msg, sizeof(msg), this_host->opc, peerpc(pvt), pvt->cic, ISUP_GRS, &current);
+  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), pvt->cic, ISUP_GRS, &current);
   isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 1, 0);
   param[0] = count - 1;
   isup_msg_add_variable(msg, sizeof(msg), &varptr, &current, param, 1);
@@ -1690,8 +1695,8 @@ int isup_called_party_num_encode_no_st(char *number, unsigned char *param,
 
 /* Encode a phone number in ISUP "Calling Party Number" format. (Q.763 (3.10))
    Returns encoded length on success, -1 on error. */
-int isup_calling_party_num_encode(char *number, int pres_restr,
-				  unsigned char *param, int plen) {
+int isup_calling_party_num_encode(char *number, int pres_restr, int si, unsigned char *param, int plen)
+{
   int nlen;
   int is_odd;
   int is_international;
@@ -1711,8 +1716,7 @@ int isup_calling_party_num_encode(char *number, int pres_restr,
   }
 
   param[0] = (is_odd << 7) | (is_international ? 4 : 3);
-  param[1] = 0x13; /* Number complete; ISDN number plan; network provided */
-  /* 0x11: Number complete; ISDN number plan; user provided, verified and passed */
+  param[1] = 0x10 | si; /* Number complete; ISDN number plan; + screening indicator */
   if(pres_restr) {
     param[1] |= (0x1 << 2);
   }
@@ -1730,7 +1734,7 @@ static int isup_send_sam(struct ss7_chan *pvt, char* addr, int complete)
   unsigned char param[2 + PHONENUM_MAX];
   int res;
 
-  isup_msg_init(msg, sizeof(msg), this_host->opc, peerpc(pvt), pvt->cic, ISUP_SAM, &current);
+  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), pvt->cic, ISUP_SAM, &current);
   if (complete)
     res = isup_called_party_num_encode(addr, param, sizeof(param));
   else
@@ -1773,7 +1777,7 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
     ast_verbose(VERBOSE_PREFIX_3 "chan_ss7: isup_send_iam: ISDN_H324M is not set.\n");
   }
 
-  isup_msg_init(msg, sizeof(msg), this_host->opc, peerpc(pvt), pvt->cic, ISUP_IAM, &current);
+  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), pvt->cic, ISUP_IAM, &current);
 
   /* Nature of connection indicators Q.763 (3.35). */
   param[0] = 0x00; /* No sattelite, no continuity check, no echo control */
@@ -1831,8 +1835,7 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
   } else {
     pres_restr = 0;
   }
-  res = isup_calling_party_num_encode(chan->cid.cid_num, pres_restr,
-                                      param, sizeof(param));
+  res = isup_calling_party_num_encode(chan->cid.cid_num, pres_restr, 0x3 /* network provided */, param, sizeof(param));
   if(res < 0) {
     ast_log(LOG_DEBUG, "Invalid format for calling number, dropped.\n");
   } else {
@@ -1866,7 +1869,7 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
     /* ToDo: Pass on RDNIS (and redirection cause when we implement that) as
        ISUP parameters? */
     /* Q.763 3.45 */
-    res = isup_calling_party_num_encode(rdni, pres_restr, param, sizeof(param));
+    res = isup_calling_party_num_encode(rdni, pres_restr, 0 /* national use: user provided, not verified */, param, sizeof(param));
     isup_msg_add_optional(msg, sizeof(msg), &current, IP_REDIRECTING_NUMBER, param, res);
     param[0] = 0x04; /* redirecting indicator: call diverted, all redirection information presentation restricted,
 			original redirection reason: unknown */
@@ -2037,7 +2040,7 @@ static int ss7_answer(struct ast_channel *chan) {
 
   /* Send ANM instead of CON if previously sent ACM. */
   if (pvt->state == ST_SENT_ACM) {
-    isup_msg_init(msg, sizeof(msg), this_host->opc, peerpc(pvt), pvt->cic, ISUP_ANM, &current);
+    isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), pvt->cic, ISUP_ANM, &current);
     param[0] = 0x14;  /* Subscriber free, ordinary subscriber, no end-to-end */
     param[1] = 0x14;  /* No interworking, no end-to-end, ISDN all the way, no
 			 hold, terminating access ISDN, no echo control */
@@ -2047,7 +2050,7 @@ static int ss7_answer(struct ast_channel *chan) {
     isup_msg_end_optional_part(msg, sizeof(msg), &current);
     mtp_enqueue_isup(pvt, msg, current);
   } else if (pvt->state == ST_GOT_IAM) {
-    isup_msg_init(msg, sizeof(msg), this_host->opc, peerpc(pvt), pvt->cic, ISUP_CON, &current);
+    isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), pvt->cic, ISUP_CON, &current);
     param[0] = 0x14;  /* Subscriber free, ordinary subscriber, no end-to-end */
     param[1] = 0x14;  /* No interworking, no end-to-end, ISDN all the way, no
 			 hold, terminating access ISDN, no echo control */
@@ -2157,8 +2160,8 @@ static struct ast_frame *ss7_read(struct ast_channel * chan) {
 	struct timeval now;
 	gettimeofday(&now, NULL);
 	if (now.tv_sec - lastreport.tv_sec > 10) {
-	  ast_log(LOG_NOTICE, "Short read on CIC=%d (read only %d of %d) errno=%d (%s) (supressed %d).\n",
-		  pvt->cic, sofar, AUDIO_READSIZE, errno, strerror(errno), supress);
+	  ast_log(LOG_NOTICE, "Short read on linkset \"%s\" CIC=%d (read only %d of %d) errno=%d (%s) (supressed %d).\n",
+		  pvt->link->linkset->name, pvt->cic, sofar, AUDIO_READSIZE, errno, strerror(errno), supress);
 	  lastreport = now;
 	  supress = 0;
 	}
@@ -2353,7 +2356,7 @@ static void handle_GRS_send_hwblock(struct ss7_chan* ipvt, struct isup_msg *grs_
   lock_global();
 
   /* First send hardware blocked, if required. */
-  isup_msg_init(msg, sizeof(msg), this_host->opc, grs_msg->opc, grs_msg->cic, ISUP_CGB, &current);
+  isup_msg_init(msg, sizeof(msg), variant(ipvt), this_host->opc, grs_msg->opc, grs_msg->cic, ISUP_CGB, &current);
   param[0] = 0x01;              /* Hardware failure oriented */
   isup_msg_add_fixed(msg, sizeof(msg), &current, param, 1);
   isup_msg_start_variable_part(msg, sizeof(msg), &varpart, &current, 1, 0);
@@ -2407,7 +2410,7 @@ static void handle_GRS_send_hwblock(struct ss7_chan* ipvt, struct isup_msg *grs_
   }
 
   /* Now send a GRA (group reset acknowledgement). */
-  isup_msg_init(msg, sizeof(msg), this_host->opc, grs_msg->opc, grs_msg->cic, ISUP_GRA, &current);
+  isup_msg_init(msg, sizeof(msg), variant(ipvt), this_host->opc, grs_msg->opc, grs_msg->cic, ISUP_GRA, &current);
   isup_msg_start_variable_part(msg, sizeof(msg), &varpart, &current, 1, 0);
   i = 0;
   range = grs_msg->grs.range;
@@ -2495,7 +2498,7 @@ static void isup_send_unequipped(struct link* slink, int cic, int dpc) {
   unsigned char msg[MTP_MAX_PCK_SIZE];
   int current, varptr;
 
-  isup_msg_init(msg, sizeof(msg), this_host->opc, dpc, cic, ISUP_UEC, &current);
+  isup_msg_init(msg, sizeof(msg), slink->linkset->variant, this_host->opc, dpc, cic, ISUP_UEC, &current);
   isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 0, 0);
   mtp_enqueue_isup_packet(slink, cic, msg, current, MTP_REQ_ISUP);
 }
@@ -2651,9 +2654,11 @@ static struct ss7_chan* reattempt_call(struct ss7_chan *pvt)
   chan->tech_pvt = NULL;
   newpvt = cic_hunt(pvt->link->linkset);
   if (newpvt) {
+    ast_mutex_lock(&newpvt->lock);
     ast_log(LOG_DEBUG, "Reattempt call: Got cic %d\n", newpvt->cic);
     chan->tech_pvt = newpvt;
     newpvt->owner = chan;
+    ast_mutex_unlock(&newpvt->lock);
     ss7_call(chan, pvt->addr, 0);
   }
   else {
@@ -3062,7 +3067,9 @@ static void process_rsc(struct ss7_chan *pvt, struct isup_msg *inmsg)
     if(chan != NULL) {
       /* Q.764 (2.9.3.1 a): For non-idle circuit, treat RSC as REL. */
       if (pvt->state == ST_SENT_IAM) {
+	lock_global();
 	reattempt_call(pvt);
+	unlock_global();
 	/* Send "Release Confirmed", Q.764 (2.9.3.1 a). */
 	/* Intentionally fall through ... */
       }
@@ -3112,7 +3119,7 @@ static void process_blk(struct ss7_chan *pvt, struct isup_msg *inmsg)
   pvt->blocked |= BL_RM;
 
   /* Reply with blocking acknowledge. */
-  isup_msg_init(msg, sizeof(msg), this_host->opc, inmsg->opc, inmsg->cic, ISUP_BLA,
+  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, inmsg->opc, inmsg->cic, ISUP_BLA,
                 &current);
   isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current,
                                0, 0);
@@ -3134,7 +3141,7 @@ static void process_ubl(struct ss7_chan *pvt, struct isup_msg *inmsg)
   pvt->blocked &= ~BL_RM;
 
   /* Reply with unblocking acknowledge. */
-  isup_msg_init(msg, sizeof(msg), this_host->opc, inmsg->opc, inmsg->cic, ISUP_UBA,
+  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, inmsg->opc, inmsg->cic, ISUP_UBA,
                 &current);
   isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current,
                                0, 0);
@@ -3331,7 +3338,7 @@ static void process_cgb(struct ss7_chan* pvt, struct isup_msg *inmsg) {
   }
 
   /* Reply with circuit group blocking acknowledge. */
-  isup_msg_init(msg, sizeof(msg), this_host->opc, inmsg->opc, inmsg->cic, ISUP_CGA, &current);
+  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, inmsg->opc, inmsg->cic, ISUP_CGA, &current);
   param[0] = inmsg->cgb.cgsmti;
   isup_msg_add_fixed(msg, sizeof(msg), &current, param, 1);
   isup_msg_start_variable_part(msg, sizeof(msg), &varpart, &current, 1, 0);
@@ -3511,7 +3518,7 @@ static void process_cgu(struct ss7_chan* pvt, struct isup_msg *inmsg) {
   }
 
   /* Reply with circuit group unblocking acknowledge. */
-  isup_msg_init(msg, sizeof(msg), this_host->opc, inmsg->opc, inmsg->cic, ISUP_CUA, &current);
+  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, inmsg->opc, inmsg->cic, ISUP_CUA, &current);
   param[0] = inmsg->cgu.cgsmti;
   isup_msg_add_fixed(msg, sizeof(msg), &current, param, 1);
   isup_msg_start_variable_part(msg, sizeof(msg), &varpart, &current, 1, 0);
@@ -3873,7 +3880,7 @@ static int do_group_circuit_block_unblock(struct linkset* linkset, int firstcic,
   ast_mutex_lock(&pvt->lock);
   pvt->cgb_mask = cgb_mask;
 
-  isup_msg_init(msg, sizeof(msg), this_host->opc, peerpc(pvt), firstcic, do_block ? ISUP_CGB : ISUP_CGU, &current);
+  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), firstcic, do_block ? ISUP_CGB : ISUP_CGU, &current);
   cir_group_sup_type_ind = sup_type_ind;
   isup_msg_add_fixed(msg, sizeof(msg), &current, &cir_group_sup_type_ind, 1);
 
@@ -4384,11 +4391,11 @@ static void isup_event_handler(struct mtp_event* event)
   int res;
 
   if (event->typ == MTP_EVENT_ISUP) {
-    res = decode_isup_msg(&isup_msg, event->buf, event->len);
+    res = decode_isup_msg(&isup_msg, event->isup.link->linkset->variant, event->buf, event->len);
     dpc = isup_msg.opc;
   }
   else if (event->typ == MTP_REQ_ISUP_FORWARD) {
-    res = decode_isup_msg(&isup_msg, req->buf, req->len);
+    res = decode_isup_msg(&isup_msg, event->isup.link->linkset->variant, req->buf, req->len);
     dpc = isup_msg.dpc;
   }
   else {
@@ -4454,7 +4461,7 @@ void l4isup_event(struct mtp_event* event)
   struct isup_msg isup_msg;
   int res;
 
-  res = decode_isup_msg(&isup_msg, event->buf, event->len);
+  res = decode_isup_msg(&isup_msg, event->isup.link->linkset->variant, event->buf, event->len);
   if(!res) {
     /* Q.764 (2.9.5): Discard invalid message.*/
     ast_log(LOG_NOTICE, "ISUP decoding error, message discarded. (typ=%d)\n", isup_msg.typ);

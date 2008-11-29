@@ -30,6 +30,9 @@
 
 #include "asterisk/logger.h"
 
+
+#include <netinet/in.h>
+#include "config.h"
 #include "isup.h"
 #include "mtp.h"
 
@@ -545,22 +548,42 @@ static int decode_ani_rni(unsigned char *p, int len, void *data) {
 
 /* Decode raw SIF field into ISUP message.
    Returns true on success, false on error. */
-int decode_isup_msg(struct isup_msg *msg, unsigned char *buf, int len) {
+int decode_isup_msg(struct isup_msg *msg, ss7_variant variant, unsigned char *buf, int len) {
+  
+  int i;
   memset(msg, 0, sizeof(*msg));
-  if(len < 7) {
-    ast_log(LOG_NOTICE, "Got short ISUP message (len=%d < 7).\n", len);
+  
+  if(variant==ITU_SS7)
+  	i = 7;
+  else
+  	i =10;
+  
+  if(len < i) {
+    ast_log(LOG_NOTICE, "Got short ISUP message (len=%d < %d).\n", len, i);
     return 0;
   }
 
-  msg->dpc = buf[0] | ((buf[1] & 0x3f) << 8);
-  msg->opc = ((buf[1] & 0xc0) >> 6) | (buf[2] << 2) | ((buf[3] & 0x0f) << 10);
-  msg->sls = (buf[3] & 0xf0) >> 4;
+  if(variant==ITU_SS7) {
+    msg->dpc = buf[0] | ((buf[1] & 0x3f) << 8);
+    msg->opc = ((buf[1] & 0xc0) >> 6) | (buf[2] << 2) | ((buf[3] & 0x0f) << 10);
+    msg->sls = (buf[3] & 0xf0) >> 4;
 
-  msg->cic = buf[4] | ((buf[5] & 0x0f) << 8);
-  msg->typ = buf[6];
+    msg->cic = buf[4] | ((buf[5] & 0x0f) << 8);
+    msg->typ = buf[6];
+    buf += 7;
+    len -= 7;
+  } else { /* CHINA SS7 */
+    msg->dpc = buf[0] | ((buf[1] & 0xff) << 8) | ((buf[2] & 0xff) << 16);
+    msg->opc = buf[3] | ((buf[4] & 0xff) << 8) | ((buf[5] & 0xff) << 16);
+    msg->sls = buf[6] & 0x0f;
 
-  buf += 7;
-  len -= 7;
+    msg->cic = buf[7] | ((buf[8] & 0x0f) << 8);
+    msg->typ = buf[9];
+
+    buf += 10;
+    len -= 10;
+  }
+
   switch(msg->typ) {
     case ISUP_IAM:
       /* Must initialize optional parameters, in case they are no
@@ -746,7 +769,7 @@ int decode_isup_msg(struct isup_msg *msg, unsigned char *buf, int len) {
   }
 }
 
-void isup_msg_init(unsigned char *buf, int buflen, int opc, int dpc, int cic,
+void isup_msg_init(unsigned char *buf, int buflen, ss7_variant variant, int opc, int dpc, int cic,
                    enum isup_msg_type msg_type, int *current) {
   if(buflen < 7) {
     ast_log(LOG_ERROR, "Buffer too small, size %d < 7.\n", buflen);
@@ -754,11 +777,18 @@ void isup_msg_init(unsigned char *buf, int buflen, int opc, int dpc, int cic,
   }
 
   *current = 0;
-  mtp3_put_label((cic & 0x000f), opc, dpc, &(buf[*current]));
-  *current += 4;
-  buf[(*current)++] = cic & 0xff;
-  buf[(*current)++] = (cic & 0x0f00) >> 8;
-  buf[(*current)++] = msg_type;
+  mtp3_put_label((cic & 0x000f), variant, opc, dpc, &(buf[*current]));
+  if(variant==ITU_SS7) {
+    *current += 4;
+    buf[(*current)++] = cic & 0xff;
+    buf[(*current)++] = (cic & 0x0f00) >> 8;
+    buf[(*current)++] = msg_type;
+  } else { /* CHINA SS7 */
+    *current += 7;
+    buf[(*current)++] = cic & 0xff;
+    buf[(*current)++] = (cic & 0x0f00) >> 8;
+    buf[(*current)++] = msg_type;
+  }
 }
 
 void isup_msg_add_fixed(unsigned char *buf, int buflen, int *current,
