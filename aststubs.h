@@ -79,6 +79,7 @@
 
 extern char ast_config_AST_CONFIG_DIR[];
 extern int option_debug;
+struct ast_channel;
 
 void ast_log(int level, const char *file, int line, const char *function, const char *fmt, ...)
   __attribute__ ((format (printf, 5, 6)));

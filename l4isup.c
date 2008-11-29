@@ -4129,6 +4129,7 @@ int cmd_linkset_status(int fd, int argc, char *argv[]) {
 
       if (!pvt->reset_done) {
 	n_pendingreset++;
+	ast_mutex_unlock(&pvt->lock);
 	continue;
       }
       else {
@@ -4391,11 +4392,11 @@ static void isup_event_handler(struct mtp_event* event)
   int res;
 
   if (event->typ == MTP_EVENT_ISUP) {
-    res = decode_isup_msg(&isup_msg, event->isup.link->linkset->variant, event->buf, event->len);
+    res = decode_isup_msg(&isup_msg, event->isup.slink->linkset->variant, event->buf, event->len);
     dpc = isup_msg.opc;
   }
   else if (event->typ == MTP_REQ_ISUP_FORWARD) {
-    res = decode_isup_msg(&isup_msg, event->isup.link->linkset->variant, req->buf, req->len);
+    res = decode_isup_msg(&isup_msg, req->isup.slink->linkset->variant, req->buf, req->len);
     dpc = isup_msg.dpc;
   }
   else {
@@ -4461,7 +4462,7 @@ void l4isup_event(struct mtp_event* event)
   struct isup_msg isup_msg;
   int res;
 
-  res = decode_isup_msg(&isup_msg, event->isup.link->linkset->variant, event->buf, event->len);
+  res = decode_isup_msg(&isup_msg, event->isup.slink->linkset->variant, event->buf, event->len);
   if(!res) {
     /* Q.764 (2.9.5): Discard invalid message.*/
     ast_log(LOG_NOTICE, "ISUP decoding error, message discarded. (typ=%d)\n", isup_msg.typ);
