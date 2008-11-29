@@ -210,7 +210,7 @@ static int load_config_linkset(struct ast_config *cfg, char* cat)
       language = v->value;
       has_language = 1;
     } else if(0 == strcasecmp(v->name, "combined")) {
-      strcpy(linkset->combined, v->value);
+      linkset->combined = strdup(v->value);
     }
     else if(0 == strcasecmp(v->name, "hunting_policy")) {
       if(0 == strcasecmp(v->value, "odd_lru")) {
@@ -357,7 +357,7 @@ static int load_config_link(struct ast_config *cfg, char* cat)
   char *p;
   char *spec;
   char *link_name = &cat[strlen("link-")];
-  char chan_spec_buf[100] = {0,};
+  char chan_spec_buf[1000] = {0,};
   struct linkset* linkset = NULL;
   struct link* link = &links[n_links];
   int lastcic = 0;
@@ -381,6 +381,7 @@ static int load_config_link(struct ast_config *cfg, char* cat)
   link->echocan_train = 300; /* echo cancellation training, 300ms default */
   link->mtp = NULL;
   link->initial_alignment = 1;
+  link->dpc = 0;
   *link->mtp3server_host = 0;
   *link->mtp3server_port = 0;
   link->mtp3fd = -1;
@@ -595,8 +596,8 @@ static int load_config_host(struct ast_config *cfg, char* cat)
       }
       has_opc = 1;
     } else if(0 == strcasecmp(v->name, "dpc")) {
-      char dpc_spec_buf[100] = {0,};
-      char linkset_name_buf[100];
+      char dpc_spec_buf[1000] = {0,};
+      char linkset_name_buf[1000];
       char dpc_buf[20];
 
       ast_copy_string(dpc_spec_buf, v->value, sizeof(dpc_spec_buf));
@@ -605,6 +606,7 @@ static int load_config_host(struct ast_config *cfg, char* cat)
       while(p && *p) {
 	int dpc;
 	struct linkset* linkset;
+	struct link* link;
 	if(sscanf(p, "%[^:]:%s", linkset_name_buf, dpc_buf) != 2) {
 	  ast_log(LOG_ERROR, "Invalid DPC specification '%s' for host '%s'", p, host_name);
 	  return -1;
@@ -619,10 +621,15 @@ static int load_config_host(struct ast_config *cfg, char* cat)
 	}
 	linkset = lookup_linkset(linkset_name_buf);
 	if (!linkset) {
-	  ast_log(LOG_ERROR, "Unknown linkset '%s' for host '%s'", linkset_name_buf, host_name);
-	  return -1;
+	  link = lookup_link(linkset_name_buf);
+	  if (!link) {
+	    ast_log(LOG_ERROR, "Unknown link/linkset '%s' for host '%s'", linkset_name_buf, host_name);
+	    return -1;
+	  }
+	  link->dpc = dpc;
 	}
-	host->dpc[linkset->lsi] = dpc;
+	else
+	  host->dpc[linkset->lsi] = dpc;
 	p = strsep(&spec, ",");
       }
       has_dpc = 1;
