@@ -482,6 +482,7 @@ int decode_isup_phonenum(int with_presentation_restrict, unsigned char *p, int l
   // Handle international number.
   nature_of_adr_ind = p[0] & 0x7f;
   switch(nature_of_adr_ind) {
+    case 0x70:                  // Hong Kong CSL
     case 0x03:                  // National (significant) number.
       break;
     case 0x01:                  // Subscriber local number. Getting this has

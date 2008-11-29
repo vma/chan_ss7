@@ -38,9 +38,22 @@
 #include <sys/ioctl.h>
 #include <sys/time.h>
 
-#include "kernel/zaptel.h"
+#ifdef DAHDI
+#include <dahdi/user.h>
 #define FAST_HDLC_NEED_TABLES
-#include "kernel/fasthdlc.h"
+#include <dahdi/fasthdlc.h>
+#else
+#include "zaptel.h"
+#define FAST_HDLC_NEED_TABLES
+#include "fasthdlc.h"
+#define DAHDI_SIG_MTP2 ZT_SIG_MTP2
+#define DAHDI_EVENT_DIALCOMPLETE ZT_EVENT_DIALCOMPLETE
+#define DAHDI_DIALING ZT_DIALING
+#define DAHDI_GETGAINS ZT_GETGAINS
+#define DAHDI_SETGAINS ZT_SETGAINS
+#define DAHDI_LAW_ALAW ZT_LAW_ALAW
+#define DAHDI_LAW_MULAW ZT_LAW_MULAW
+#endif
 
 #include "config.h"
 #include "mtp.h"
@@ -2167,8 +2180,13 @@ static int mtp_init_link(struct mtp2_state* m, struct link* link, int slinkno) {
   m->subservice = link->linkset->subservice;
   m->name = link->name;
   fasthdlc_precalc();
-  fasthdlc_init(&m->h_rx);
-  fasthdlc_init(&m->h_tx);
+#ifdef DAHDI
+    fasthdlc_init(&m->h_rx, FASTHDLC_MODE_64);
+    fasthdlc_init(&m->h_tx, FASTHDLC_MODE_64);
+#else
+    fasthdlc_init(&m->h_rx);
+    fasthdlc_init(&m->h_tx);
+#endif
   /* Fill in the fasthdlc transmit buffer with the opening flag. */
   fasthdlc_tx_frame_nocheck(&m->h_tx);
   memset(m->backbuf, 0, sizeof(m->backbuf));

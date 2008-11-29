@@ -233,6 +233,7 @@ static int load_config_linkset(struct ast_config *cfg, char* cat)
   linkset->inservice = 0;
   linkset->combined = 0;
   linkset->variant = ITU_SS7;
+  linkset->grs = 1;
 
   context = "default";
   language = "";
@@ -343,6 +344,16 @@ static int load_config_linkset(struct ast_config *cfg, char* cat)
       if (linkset->dni_chunk_limit < 0 || linkset->dni_chunk_limit > 99) {
         ast_log(LOG_ERROR, "Invalid value '%s' for config option '%s', aborting.\n", v->value, v->name);
         return -1;
+      }
+    } else if(0 == strcasecmp(v->name, "grs")) {
+      if ((strcasecmp(v->value, "no") != 0) && (strcasecmp(v->value, "yes") != 0) &&
+	  (strcasecmp(v->value, "0") != 0)  && (strcasecmp(v->value, "1") != 0))
+	{
+	  ast_log(LOG_ERROR, "Invalid value '%s' for grs entry for linkset '%s'.\n", v->value, linkset_name);
+	  return -1;
+	}
+      if ((strcasecmp(v->value, "0") == 0) || (strcasecmp(v->value, "no") == 0)) {
+	linkset->grs = 0;
       }
     } else {
       ast_log(LOG_ERROR, "Unknown config option '%s', aborting.\n", v->name);

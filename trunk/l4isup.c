@@ -58,7 +58,18 @@
 #include "asterisk/alaw.h"
 #include "asterisk/ulaw.h"
 
-#include "kernel/zaptel.h"
+#ifdef DAHDI
+#include <dahdi/user.h>
+#else
+#include "zaptel.h"
+#define DAHDI_DIALING ZT_DIALING
+#define DAHDI_EVENT_DIALCOMPLETE ZT_EVENT_DIALCOMPLETE
+#define DAHDI_GETGAINS ZT_GETGAINS
+#define DAHDI_LAW_ALAW ZT_LAW_ALAW
+#define DAHDI_LAW_MULAW ZT_LAW_MULAW
+#define DAHDI_SETGAINS ZT_SETGAINS
+#define dahdi_gains zt_gains
+#endif
 
 #include "astversion.h"
 #include "config.h"
@@ -1361,37 +1372,53 @@ static void send_init_grs(struct linkset* linkset) {
 
   lock_global();
 
-  /* Send a GRS for each continuous range of circuits. */
-  first_equipped = -1;
-  for(i = linkset->first_cic; i <= linkset->last_cic; i++) {
-    if(linkset->cic_list[i] && linkset->cic_list[i]->equipped) {
-      /* Clear the blocked status for the circuits; any remote blocking will be
-         reported by the peer. */
-      linkset->cic_list[i]->blocked = 0;
-      /* Look for the start of a range. */
-      if(first_equipped == -1) {
-        first_equipped = i;
+  if (linkset->grs) {
+    /* Send a GRS for each continuous range of circuits. */
+    first_equipped = -1;
+    for(i = linkset->first_cic; i <= linkset->last_cic; i++) {
+      if(linkset->cic_list[i] && linkset->cic_list[i]->equipped) {
+	/* Clear the blocked status for the circuits; any remote blocking will be
+	   reported by the peer. */
+	linkset->cic_list[i]->blocked = 0;
+	/* Look for the start of a range. */
+	if(first_equipped == -1) {
+	  first_equipped = i;
+	}
+      }
+
+      /* Look for the end of a range. */
+      if(first_equipped != -1 &&
+	 (i == linkset->last_cic || !(linkset->cic_list[i+1] && linkset->cic_list[i+1]->equipped) || first_equipped + 31 == i)) {
+	range = i - first_equipped;
+	if(range == 0) {
+	  struct ss7_chan *pvt = linkset->cic_list[first_equipped];
+	  ast_mutex_lock(&pvt->lock);
+	  pvt->state = ST_SENT_REL;
+	  isup_send_rsc(pvt); 
+	  t16_start(pvt);
+	  ast_mutex_unlock(&pvt->lock);
+	  first_equipped = -1;
+	} else {
+	  linkset->cic_list[first_equipped]->grs_count = range + 1;
+	  isup_send_grs(linkset->cic_list[first_equipped], range + 1, 1);
+	}
+	ast_log(LOG_DEBUG, "Group reset first %d, range %d \n", first_equipped, range);
+	first_equipped = -1;
       }
     }
-
-    /* Look for the end of a range. */
-    if(first_equipped != -1 &&
-       (i == linkset->last_cic || !(linkset->cic_list[i+1] && linkset->cic_list[i+1]->equipped) || first_equipped + 31 == i)) {
-      range = i - first_equipped;
-      if(range == 0) {
-	struct ss7_chan *pvt = linkset->cic_list[first_equipped];
+  }
+  else {
+    for(i = linkset->first_cic; i <= linkset->last_cic; i++) {
+      if(linkset->cic_list[i] && linkset->cic_list[i]->equipped) {
+        /* Clear the blocked status for the circuits; any remote blocking will be
+           reported by the peer. */
+	struct ss7_chan *pvt = linkset->cic_list[i];
 	ast_mutex_lock(&pvt->lock);
+        linkset->cic_list[i]->blocked = 0;
 	pvt->state = ST_SENT_REL;
-	isup_send_rsc(pvt); 
-	t16_start(pvt);
+	reset_circuit(pvt);
 	ast_mutex_unlock(&pvt->lock);
-	first_equipped = -1;
-      } else {
-        linkset->cic_list[first_equipped]->grs_count = range + 1;
-        isup_send_grs(linkset->cic_list[first_equipped], range + 1, 1);
       }
-      ast_log(LOG_DEBUG, "Group reset first %d, range %d \n", first_equipped, range);
-      first_equipped = -1;
     }
   }
 
@@ -1772,9 +1799,9 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
     if (strstr(isdn_h324m,"LLC")) {
       h324m_llc = 1;
     }
-    ast_verbose(VERBOSE_PREFIX_3 "chan_ss7: isup_send_iam: h324m_usi=%d, h324m_llc=%d\n", h324m_usi, h324m_llc);
+    ast_log(LOG_DEBUG, "chan_ss7: isup_send_iam: h324m_usi=%d, h324m_llc=%d\n", h324m_usi, h324m_llc);
   } else {
-    ast_verbose(VERBOSE_PREFIX_3 "chan_ss7: isup_send_iam: ISDN_H324M is not set.\n");
+    ast_log(LOG_DEBUG, "chan_ss7: isup_send_iam: ISDN_H324M is not set.\n");
   }
 
   isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), pvt->cic, ISUP_IAM, &current);
@@ -2080,12 +2107,12 @@ static void ss7_handle_event(struct ss7_chan *pvt, int event) {
   int res, doing_dtmf;
 
   switch(event) {
-  case ZT_EVENT_DIALCOMPLETE:
+  case DAHDI_EVENT_DIALCOMPLETE:
     /* Chech if still doing DTMF sending. If not, set flag to start
        outputting audio again. */
-    res = ioctl(pvt->zaptel_fd, ZT_DIALING, &doing_dtmf);
+    res = ioctl(pvt->zaptel_fd, DAHDI_DIALING, &doing_dtmf);
     if(res < 0) {
-      ast_log(LOG_WARNING, "Error querying zaptel for ZT_DIALING on cic=%d: %s.\n",
+      ast_log(LOG_WARNING, "Error querying zaptel for DAHDI_DIALING on cic=%d: %s.\n",
 	      pvt->cic, strerror(errno));
       /* Better start the audio, don't want to permanently disable it. */
       pvt->sending_dtmf = 0;
@@ -2346,6 +2373,10 @@ static void handle_GRS_send_hwblock(struct ss7_chan* ipvt, struct isup_msg *grs_
   int range;
   unsigned long cgb_mask = 0;
 
+  if (!linkset->grs) {
+    ast_log(LOG_WARNING, "Discarding GROUP RESET message, opc=0x%x, dpc=0x%x, cic=%d, range=%d, but group messages are disabled.\n", grs_msg->opc, grs_msg->dpc, grs_msg->cic, grs_msg->grs.range);
+    return;
+  }
   ast_log(LOG_NOTICE, "Got GROUP RESET message, opc=0x%x, dpc=0x%x, sls=0x%x, cic=%d, range=%d.\n", grs_msg->opc, grs_msg->dpc, grs_msg->sls, grs_msg->cic, grs_msg->grs.range);
   if(grs_msg->cic < 0 || grs_msg->cic + grs_msg->grs.range + 1 >= MAX_CIC) {
     ast_log(LOG_NOTICE, "Got unreasonable GRS with range %d-%d, discarding.\n",
@@ -3855,47 +3886,76 @@ static int do_group_circuit_block_unblock(struct linkset* linkset, int firstcic,
   if (!cgb_mask)
     return firstcic+32;
   lock_global();
-  memset(param, 0, sizeof(param));
-  for (p = 0; p < 32; p++) {
-    param[0]++;
-    if (cgb_mask & (1<<p)) {
-      pvt = linkset->cic_list[firstcic+p];
-      if (pvt) {
-	struct link* link = pvt->link;
-	if ((firstcic - link->first_cic + p + 1 == link->schannel))
-	  continue;
+  if (linkset->grs) {
+    memset(param, 0, sizeof(param));
+    for (p = 0; p < 32; p++) {
+      param[0]++;
+      if (cgb_mask & (1<<p)) {
+	pvt = linkset->cic_list[firstcic+p];
+	if (pvt) {
+	  struct link* link = pvt->link;
+	  if ((firstcic - link->first_cic + p + 1 == link->schannel))
+	    continue;
+	}
+	if (own_cics_only)
+	  if (!pvt || !pvt->equipped)
+	    continue;
+	mask |= (1<<p);
+	param[(p / 8) + 1] |= 0x1 << (p % 8);
       }
-      if (own_cics_only)
-	if (!pvt || !pvt->equipped)
-	  continue;
-      mask |= (1<<p);
-      param[(p / 8) + 1] |= 0x1 << (p % 8);
+    }
+    param[0]--; /* Range code = range-1 */
+    param[0] = 32; /* SIU requires this!! */
+    ast_log(LOG_NOTICE, "Sending CIRCUIT GROUP %sBLOCKING, cic=%d, mask=0x%08lx.\n", do_block ? "" : "UN", firstcic, mask);
+
+    pvt = linkset->cic_list[firstcic];
+    ast_mutex_lock(&pvt->lock);
+    pvt->cgb_mask = cgb_mask;
+
+    isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), firstcic, do_block ? ISUP_CGB : ISUP_CGU, &current);
+    cir_group_sup_type_ind = sup_type_ind;
+    isup_msg_add_fixed(msg, sizeof(msg), &current, &cir_group_sup_type_ind, 1);
+
+    /* variable range and status */
+    isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 1, 0);
+
+    isup_msg_add_variable(msg, sizeof(msg), &varptr, &current, param, 6);
+    mtp_enqueue_isup(pvt, msg, current);
+    if (do_timers) {
+      if (do_block)
+	t18_start(pvt);
+      else
+	t20_start(pvt);
+    }
+    ast_mutex_unlock(&pvt->lock);
+  }
+  else {
+    for (p = 0; p < 32; p++) {
+      param[0]++;
+      if (cgb_mask & (1<<p)) {
+        pvt = linkset->cic_list[firstcic+p];
+        if (pvt) {
+          struct link* link = pvt->link;
+          if ((firstcic - link->first_cic + p + 1 == link->schannel))
+            continue;
+        }
+        if (own_cics_only)
+          if (!pvt || !pvt->equipped)
+            continue;
+
+        if (do_block) {
+          isup_send_blk(pvt);
+          if (do_timers)
+            t12_start(pvt);
+
+        } else {
+          isup_send_ubl(pvt);
+          if (do_timers)
+            t14_start(pvt);
+        }
+      }
     }
   }
-  param[0]--; /* Range code = range-1 */
-  param[0] = 32; /* SIU requires this!! */
-  ast_log(LOG_NOTICE, "Sending CIRCUIT GROUP %sBLOCKING, cic=%d, mask=0x%08lx.\n", do_block ? "" : "UN", firstcic, mask);
-
-  pvt = linkset->cic_list[firstcic];
-  ast_mutex_lock(&pvt->lock);
-  pvt->cgb_mask = cgb_mask;
-
-  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), firstcic, do_block ? ISUP_CGB : ISUP_CGU, &current);
-  cir_group_sup_type_ind = sup_type_ind;
-  isup_msg_add_fixed(msg, sizeof(msg), &current, &cir_group_sup_type_ind, 1);
-
-  /* variable range and status */
-  isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 1, 0);
-
-  isup_msg_add_variable(msg, sizeof(msg), &varptr, &current, param, 6);
-  mtp_enqueue_isup(pvt, msg, current);
-  if (do_timers) {
-    if (do_block)
-      t18_start(pvt);
-    else
-      t20_start(pvt);
-  }
-  ast_mutex_unlock(&pvt->lock);
   unlock_global();
 
   return firstcic+p;
@@ -4197,14 +4257,14 @@ static int fill_gain_ulaw(float gain, float linear_gain, int idx) {
 
 static int set_gain(struct ss7_chan *pvt, float rx_gain, float tx_gain) {
 
-  struct zt_gains gain;
+  struct dahdi_gains gain;
   float rx_linear_gain, tx_linear_gain;
   int res, i;
 
   memset(&gain, 0, sizeof(gain));
   gain.chan = 0;
 
-  res = ioctl(pvt->zaptel_fd, ZT_GETGAINS, &gain);
+  res = ioctl(pvt->zaptel_fd, DAHDI_GETGAINS, &gain);
   if (res) {
     ast_log(LOG_WARNING, "Failed to read gains: %s\n", strerror(errno));
     return -1;
@@ -4214,7 +4274,7 @@ static int set_gain(struct ss7_chan *pvt, float rx_gain, float tx_gain) {
   tx_linear_gain = pow(10.0, tx_gain / 20.0);
 
   switch (pvt->law) {
-      case ZT_LAW_ALAW:
+      case DAHDI_LAW_ALAW:
           /* Calculate receive-gain alaw-values */
           for (i = 0; i < (sizeof(gain.rxgain) / sizeof(gain.rxgain[0])); i++) {
               gain.rxgain[i] = fill_gain_alaw(rx_gain, rx_linear_gain, i);
@@ -4227,7 +4287,7 @@ static int set_gain(struct ss7_chan *pvt, float rx_gain, float tx_gain) {
 
           break;
 
-      case ZT_LAW_MULAW:
+      case DAHDI_LAW_MULAW:
           /* Calculate receive-gain ulaw-values */
           for (i = 0; i < (sizeof(gain.rxgain) / sizeof(gain.rxgain[0])); i++) {
               gain.rxgain[i] = fill_gain_ulaw(rx_gain, rx_linear_gain, i);
@@ -4245,7 +4305,7 @@ static int set_gain(struct ss7_chan *pvt, float rx_gain, float tx_gain) {
                     pvt->cic, pvt->link->name, rx_gain, tx_gain);
 
   /* Set gain-config on one timeslot */
-  res = ioctl(pvt->zaptel_fd, ZT_SETGAINS, &gain);
+  res = ioctl(pvt->zaptel_fd, DAHDI_SETGAINS, &gain);
   if (res) {
     ast_log(LOG_WARNING, "Failed to set gains: %s\n", strerror(errno));
   }
@@ -4303,7 +4363,7 @@ static void init_pvt(struct ss7_chan *pvt, int cic) {
   pvt->is_digital = 0;
   pvt->grs_count = -1;
   pvt->cgb_mask = 0;
-  pvt->law = ZT_LAW_ALAW;
+  pvt->law = DAHDI_LAW_ALAW;
   memset(pvt->context, 0, sizeof(pvt->context));
   memset(pvt->language, 0, sizeof(pvt->language));
 };
