@@ -304,6 +304,14 @@ static inline int peerpc(mtp2_t* m)
 }
 
 
+static inline int linkpeerpc(mtp2_t* m)
+{
+  if (m->link->dpc)
+    return m->link->dpc;
+  return m->link->linkset->dpc;
+}
+
+
 static mtp2_t* findtargetslink(mtp2_t *originalm, int sls)
 {
   int i;
@@ -937,7 +945,7 @@ static int mtp3_send_sltm(void *data) {
 
   fifo_log(m, LOG_EVENT, "Sending SLTM to peer on link '%s'....\n", m->name);
   
-  mtp3_put_label(m->sls, this_host->opc, peerpc(m), message_sltm);
+  mtp3_put_label(m->sls, this_host->opc, linkpeerpc(m), message_sltm);
   message_sltm[4] = 0x11;       /* SLTM */
   message_sltm[5] = 0xf0;       /* Length: 15 */
   memcpy(&(message_sltm[6]), sltm_pattern, sizeof(sltm_pattern));
@@ -1128,7 +1136,7 @@ static void mtp2_good_frame(mtp2_t *m, unsigned char *buf, int len) {
         subservice = 0x8;
 
       fifo_log(m, LOG_NOTICE, "Sending TRA to peer on link '%s'....\n", m->name);
-      mtp3_put_label(m->sls, this_host->opc, peerpc(m), message_tra);
+      mtp3_put_label(m->sls, this_host->opc, linkpeerpc(m), message_tra);
       message_tra[4] = 0x17; /* TRA */
       mtp2_queue_msu(m, (subservice << 4) | 0, message_tra, 5);
 
@@ -1333,7 +1341,7 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
 
       /* Q.707 (2.2) conditions for acceptance of SLTA. */
       if(slc == m->sls &&
-	 opc == peerpc(m) && dpc == this_host->opc &&
+	 opc == linkpeerpc(m) && dpc == this_host->opc &&
 	 0 == memcmp(sltm_pattern, &(buf[10]), sizeof(sltm_pattern))) {
 	fifo_log(m, LOG_DEBUG, "Got valid SLTA response on link '%s', state=%d.\n", m->name, m->state);
 	l4up(m);
@@ -2083,8 +2091,8 @@ static int mtp_init_link(struct mtp2_state* m, struct link* link, int slinkno) {
   m->link = link;
   link->mtp = m;
   fifo_log(m, LOG_DEBUG, "init link %s, linkset %s, schannel %d.\n", link->name, link->linkset->name, link->schannel);
-  if(peerpc(m) < 0 || peerpc(m) >= (1<<14)) {
-    ast_log(LOG_ERROR, "Invalid value 0x%x for peerpc.\n", peerpc(m));
+  if(linkpeerpc(m) < 0 || linkpeerpc(m) >= (1<<14)) {
+    ast_log(LOG_ERROR, "Invalid value 0x%x for linkpeerpc.\n", linkpeerpc(m));
     goto fail;
   }
   m->send_sltm = link->send_sltm;

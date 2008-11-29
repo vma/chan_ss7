@@ -176,6 +176,7 @@ int openschannel(struct link* link)
   int fd, res;
   int zapid = link->schannel + link->first_zapid;
 
+#if 1
   sprintf(devname, "/dev/zap/%d", zapid);
   fd = open(devname, O_RDWR);
   if(fd < 0) {
@@ -183,6 +184,19 @@ int openschannel(struct link* link)
             devname, strerror(errno));
     goto fail;
   }
+#else
+  devname = "/dev/zap/channel";
+  fd = open(devname, O_RDWR);
+  if(fd < 0) {
+    ast_log(LOG_WARNING, "Unable to open signalling link zaptel device %s: %s\n", devname, strerror(errno));
+    goto fail;
+  }
+
+  if (ioctl(fd, ZT_SPECIFY, &zapid)) {
+    ast_log(LOG_WARNING, "Unable to specify channel %d: %s\n", zapid, strerror(errno));
+    goto fail;
+  }
+#endif
 
   bi.txbufpolicy = ZT_POLICY_IMMEDIATE;
   bi.rxbufpolicy = ZT_POLICY_IMMEDIATE;

@@ -1,7 +1,7 @@
 # INSTALL_PREFIX may be overridden to install elsewhere from /usr.
 INSTALL_PREFIX = /usr/local/ss7
 
-VERSION=1.0.0
+VERSION=1.0.9
 
 # INCLUDE may be overridden to find asterisk and zaptel includes in
 # non-standard places.
@@ -96,8 +96,8 @@ release-install: ss7-mtp-$(VERSION).tar.gz ss7-isup-$(VERSION).tar.gz
 
 install: chan_ss7.so
 	install -m 755 -d $(INSTALL_PREFIX)/lib/modules
-	install -m 644 chan_ss7.so $(INSTALL_PREFIXx)/lib/modules
-	install -m 755 mtp3d $(INSTALL_PREFIXx)/sbin
+	install -m 644 chan_ss7.so $(INSTALL_PREFIX)/lib/modules
+	install -m 755 mtp3d $(INSTALL_PREFIX)/sbin
 
 clean:
 	rm -f chan_ss7.so mtp3d $(ALLOBJS) mtp_standalone.o transport_standalone.o utils_standalone.o .depend

@@ -91,6 +91,7 @@ struct link {
   int echocan_taps;
   int echocan_train;
   int initial_alignment;
+  int dpc;
   struct linkset* linkset;
   struct mtp2_state* mtp;
   struct host* on_host;

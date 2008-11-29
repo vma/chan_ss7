@@ -316,7 +316,7 @@ static void mtp_enqueue_isup_packet(struct link* link, int cic, unsigned char *m
 
   if(sizeof(struct mtp_req) + msglen > sizeof(req_buf)) {
     ast_log(LOG_ERROR, "Attempt to send oversized ISUP message of len "
-            "%d > %d.\n", msglen, sizeof(req_buf) - sizeof(struct mtp_req));
+            "%d > %lu.\n", msglen, sizeof(req_buf) - sizeof(struct mtp_req));
     return;
   }
   switch (link->linkset->loadshare) {
@@ -1862,8 +1862,12 @@ static int ss7_call(struct ast_channel *chan, char *addr, int timeout) {
 
   pvt->link->linkset->outgoing_calls++;
   res = isup_send_iam(chan, addr, rdni, dni, chunk_limit);
-  if (res < 0)
+  if (res < 0) {
+    ast_log(LOG_WARNING, "SS7 call failed, addr=%s CIC=%d. linkset '%s'\n", (addr ? addr : "<NULL>"), pvt->cic, pvt->link->linkset->name);
+    free_cic(pvt);
+    ast_mutex_unlock(&pvt->lock);
     return res;
+  }
 
   if (chunk_limit > 0 && strlen(dni) > chunk_limit) {
     while(chunk_sofar < strlen(dni)) {
@@ -4164,7 +4168,7 @@ static int setup_cic(struct link* link, int channel)
 
   pvt = malloc(sizeof(*pvt));
   if(pvt == NULL) {
-    ast_log(LOG_ERROR, "Out of memory allocating %d bytes.\n", sizeof(*pvt));
+    ast_log(LOG_ERROR, "Out of memory allocating %lu bytes.\n", sizeof(*pvt));
     return -1;
   }
   init_pvt(pvt, cic);
@@ -4231,7 +4235,7 @@ static void isup_event_handler(struct mtp_event* event)
     return;
   }
   pvt = find_pvt(linkset->links[0], cic);
-  ast_log(LOG_DEBUG, "Got ISUP event, typ=%s, cic=%d, dpc=%d, linkset=%s, pvt=0x%08x, pvt.eq=%d \n", isupmsg(isup_msg.typ), cic, dpc, linkset->name, (unsigned int) pvt, pvt ? pvt->equipped : -1);
+  ast_log(LOG_DEBUG, "Got ISUP event, typ=%s, cic=%d, dpc=%d, linkset=%s, pvt=0x%08lx, pvt.eq=%d \n", isupmsg(isup_msg.typ), cic, dpc, linkset->name, (unsigned long int) pvt, pvt ? pvt->equipped : -1);
   unlock_global();
 
   if (!pvt)
@@ -4351,7 +4355,7 @@ int isup_init(void) {
 	if (link->channelmask & (1 << c)) {
 	  pvt = malloc(sizeof(*pvt));
 	  if(pvt == NULL) {
-	    ast_log(LOG_ERROR, "Out of memory allocating %d bytes.\n", sizeof(*pvt));
+	    ast_log(LOG_ERROR, "Out of memory allocating %lu bytes.\n", sizeof(*pvt));
 	    return -1;
 	  }
 	  init_pvt(pvt, cic);
