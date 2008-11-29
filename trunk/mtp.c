@@ -1299,7 +1299,7 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
   int slt_pattern_len;
   int dpc, opc, slc;
   int li;
-  int i,j,k;
+  int i;
 
   li = buf[2] & 0x3f;
   service_indicator = buf[3] & 0xf;

@@ -93,7 +93,7 @@ static int load_config_jitter(struct ast_config *cfg)
 
   v = ast_variable_browse(cfg, "jitter");
   while(v != NULL) {
-    !ast_jb_read_conf(&global_jbconf, v->name, v->value);
+    ast_jb_read_conf(&global_jbconf, v->name, v->value);
     v = v->next;
   }
 
@@ -232,6 +232,7 @@ static int load_config_linkset(struct ast_config *cfg, char* cat)
   linkset->loadshare = LOADSHARE_COMBINED_LINKSET;
   linkset->inservice = 0;
   linkset->combined = 0;
+  linkset->variant = ITU_SS7;
 
   context = "default";
   language = "";

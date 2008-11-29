@@ -211,7 +211,7 @@ int decode_isup_msg(struct isup_msg *msg, ss7_variant variant, unsigned char *bu
 
 */
 void isup_msg_init(unsigned char *buf, int buflen, ss7_variant variant, int opc, int dpc, int cic,
-                   enum isup_msg_type msg_type, int *current);				/* by lin.miao@openvox.cn */
+                   enum isup_msg_type msg_type, int *current);
 void isup_msg_add_fixed(unsigned char *buf, int buflen, int *current,
                         unsigned char *param, int param_len);
 void isup_msg_start_variable_part(unsigned char *buf, int buflen,

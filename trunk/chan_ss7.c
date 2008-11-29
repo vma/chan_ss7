@@ -644,7 +644,7 @@ static void process_event(struct mtp_event* event)
 static void *monitor_main(void *data) {
   int res, nres;
   struct pollfd fds[(MAX_LINKS+1)];
-  int i, n_fds;
+  int i, n_fds = 0;
   int rebuild_fds = 1;
   struct lffifo *receive_fifo = mtp_get_receive_fifo();
 
@@ -751,7 +751,7 @@ static void *monitor_main(void *data) {
 	    int p = res;
 	    int len = event->len;
 	    if (sizeof(struct mtp_event) + event->len > MTP_EVENT_MAX_SIZE) {
-	      ast_log(LOG_NOTICE, "Got too large packet: len %d, max %d, discarded", sizeof(struct mtp_event) + event->len, MTP_EVENT_MAX_SIZE);
+	      ast_log(LOG_NOTICE, "Got too large packet: len %lu, max %lu, discarded", sizeof(struct mtp_event) + event->len, MTP_EVENT_MAX_SIZE);
 	      len = 0;
 	      res = 0;
 	    }
