@@ -21,7 +21,9 @@ New in version 1.0.96-beta
 - Fixed various mutex locking bugs
 - The circuit group messages GRS, CGB and CGU are now substituted by a sequence of their
   single CIC counterpart when the configuration parameter grs is set to no for a linkset.
-- Dahdi support
+- Dahdi support.
+- Fixes to the non-group messages for GRS, CGB, CGU.
+- FreeBSD support
 
 New in verion 1.0.0
 - Compatible with asterisk 1.2.x and 1.4.x.

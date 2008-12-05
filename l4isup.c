@@ -141,6 +141,8 @@ struct ss7_chan {
   int t6;
   int t7;
   int t9;
+  int t12;
+  int t14;
   int t16;
   int t17;
   int t18;
@@ -711,6 +713,17 @@ static void isup_send_blk(struct ss7_chan *pvt)
   mtp_enqueue_isup(pvt, msg, current);
 }
 
+/* Send an "unblocked" message. */
+static void isup_send_ubl(struct ss7_chan *pvt)
+{
+  unsigned char msg[MTP_MAX_PCK_SIZE];
+  int current, varptr;
+  
+  isup_msg_init(msg, sizeof(msg), variant(pvt), this_host->opc, peerpc(pvt), pvt->cic, ISUP_UBL, &current);
+  isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 0, 0);
+  mtp_enqueue_isup(pvt, msg, current);
+}
+
 /* Reset circuit. Called with pvt->lock held */
 static void reset_circuit(struct ss7_chan* pvt)
 {
@@ -1085,6 +1098,51 @@ static void t9_start(struct ast_channel *chan) {
   pvt->t9 = start_timer(90000, t9_timeout, chan);
 }
 
+static int t12_timeout(void *arg) {
+  struct ss7_chan *pvt = arg;
+
+  ast_log(LOG_NOTICE, "T12 timeout (waiting for BLA).\n");
+  isup_send_blk(pvt);
+  return 1;                     /* Run us again the next period */
+}
+
+/* This should be called with pvt->lock held. */
+static void t12_clear(struct ss7_chan *pvt) {
+  if(pvt->t12 != -1) {
+    stop_timer(pvt->t12);
+    pvt->t12 = -1;
+  }
+}
+
+/* This should be called with pvt->lock held. */
+static void t12_start(struct ss7_chan *pvt) {
+  t12_clear(pvt);
+  pvt->t12 = start_timer(30000, t12_timeout, pvt);
+}
+
+static int t14_timeout(void *arg) {
+  struct ss7_chan *pvt = arg;
+
+  ast_log(LOG_NOTICE, "T14 timeout (waiting for UBA).\n");
+  isup_send_ubl(pvt);
+  return 1;                     /* Run us again the next period */
+}
+
+/* This should be called with pvt->lock held. */
+static void t14_clear(struct ss7_chan *pvt) {
+  if(pvt->t14 != -1) {
+    stop_timer(pvt->t14);
+    pvt->t14 = -1;
+  }
+}
+
+/* This should be called with pvt->lock held. */
+static void t14_start(struct ss7_chan *pvt) {
+
+  t14_clear(pvt);
+  pvt->t14 = start_timer(30000, t14_timeout, pvt);
+}
+ 
 /* This should be called with pvt->lock held. */
 static void t16_clear(struct ss7_chan *pvt) {
   if(pvt->t16 != -1) {
@@ -4332,6 +4390,8 @@ static void init_pvt(struct ss7_chan *pvt, int cic) {
   pvt->t6 = -1;
   pvt->t7 = -1;
   pvt->t9 = -1;
+  pvt->t12 = -1;
+  pvt->t14 = -1;
   pvt->t16 = -1;
   pvt->t17 = -1;
   pvt->t18 = -1;

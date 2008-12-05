@@ -26,7 +26,7 @@
 
 #include <stdio.h>
 #include <stdarg.h>
-#include <malloc.h>
+#include <stdlib.h>
 #include <pthread.h>
 
 #define AST_API_MODULE
