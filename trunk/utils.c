@@ -31,6 +31,7 @@
 
 #include <pthread.h>
 #include <netinet/in.h>
+#include <sys/socket.h>
 
 #ifdef MTP_STANDALONE
 #include "aststubs.h"
