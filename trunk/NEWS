@@ -1,7 +1,7 @@
 This is the NEWS for chan_ss7. This version is maintained by Anders Baekgaard (ab@dicea.dk).
 Please send bug reports, feature requests etc. to chan_ss7@dicea.dk.
 
-New in version 1.0.96-beta
+New in version 1.1
 - Fixed buffer overflows in config.c.
 - Fixed loss of IDLE CICs.
 - Fixed segmentation fault when using "combined" attribute for linksets.
@@ -21,7 +21,7 @@ New in version 1.0.96-beta
 - Fixed various mutex locking bugs
 - The circuit group messages GRS, CGB and CGU are now substituted by a sequence of their
   single CIC counterpart when the configuration parameter grs is set to no for a linkset.
-- Dahdi support.
+- Dahdi support (preliminary).
 - Fixes to the non-group messages for GRS, CGB, CGU.
 - FreeBSD support
 
