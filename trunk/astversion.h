@@ -22,6 +22,7 @@
  */
 
 
+#include "asterisk.h"
 #include "asterisk/module.h"
 
 #ifdef AST_MODULE_INFO
