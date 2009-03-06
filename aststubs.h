@@ -86,7 +86,7 @@ void ast_log(int level, const char *file, int line, const char *function, const 
 void ast_verbose(const char *fmt, ...)
   __attribute__ ((format (printf, 1, 2)));
 
-typedef int (*ast_sched_cb)(void *data);
+typedef int (*ast_sched_cb)(const void *data);
 struct sched_context *mtp_sched_context_create(void);
 void mtp_sched_context_destroy(struct sched_context *con);
 int mtp_sched_add(struct sched_context *con, int when, ast_sched_cb callback, void *data);

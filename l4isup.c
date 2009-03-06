@@ -41,6 +41,7 @@
 #include <sys/ioctl.h>
 #include <math.h>
 
+#include "asterisk.h"
 #include "asterisk/logger.h"
 #include "asterisk/options.h"
 #include "asterisk/channel.h"
@@ -69,6 +70,10 @@
 #define DAHDI_LAW_MULAW ZT_LAW_MULAW
 #define DAHDI_SETGAINS ZT_SETGAINS
 #define dahdi_gains zt_gains
+#endif
+
+#ifndef DSP_FEATURE_DIGIT_DETECT
+#define DSP_FEATURE_DIGIT_DETECT DSP_FEATURE_DTMF_DETECT
 #endif
 
 #include "astversion.h"
@@ -948,8 +953,8 @@ static int ss7_indicate(struct ast_channel *chan, int condition, const void* dat
   return res;
 }
 
-static int t1_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t1_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
 
   ast_log(LOG_NOTICE, "T1 timeout (waiting for RLC) CIC=%d.\n", pvt->cic);
   isup_send_rel(pvt, pvt->hangupcause);
@@ -970,8 +975,8 @@ static void t1_start(struct ss7_chan *pvt) {
   pvt->t1 = start_timer(30000, t1_timeout, pvt);
 }
 
-static int t2_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t2_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
   struct ast_channel *chan = pvt->owner;
 
   ast_log(LOG_NOTICE, "T2 timeout (waiting for RES, user) CIC=%d.\n", pvt->cic);
@@ -1003,8 +1008,8 @@ static void t5_clear(struct ss7_chan *pvt) {
   }
 }
 
-static int t5_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t5_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
 
   /* For the long T5 timeout, alert maintenance, and switch to sending
      "reset circuit". */
@@ -1022,8 +1027,8 @@ static void t5_start(struct ss7_chan *pvt) {
   pvt->t5 = start_timer(600000, t5_timeout, pvt);
 }
 
-static int t6_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t6_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
   struct ast_channel *chan = pvt->owner;
 
   ast_log(LOG_NOTICE, "T6 timeout (waiting for RES, network) CIC=%d.\n", pvt->cic);
@@ -1046,8 +1051,8 @@ static void t6_start(struct ss7_chan *pvt) {
   pvt->t6 = start_timer(60000, t6_timeout, pvt);
 }
 
-static int t7_timeout(void *arg) {
-  struct ast_channel *chan = arg;
+static int t7_timeout(const void *arg) {
+  struct ast_channel *chan = (struct ast_channel*) arg;
   struct ss7_chan *pvt = chan->tech_pvt;
 
   ast_log(LOG_NOTICE, "T7 timeout (waiting for ACM or CON) CIC=%d.\n", pvt->cic);
@@ -1073,8 +1078,8 @@ static void t7_start(struct ast_channel *chan) {
   pvt->t7 = start_timer(25000, t7_timeout, chan);
 }
 
-static int t9_timeout(void *arg) {
-  struct ast_channel *chan = arg;
+static int t9_timeout(const void *arg) {
+  struct ast_channel *chan = (struct ast_channel*) arg;
   struct ss7_chan *pvt = chan->tech_pvt;
 
   ast_log(LOG_NOTICE, "T9 timeout (waiting for ANM).\n");
@@ -1098,8 +1103,8 @@ static void t9_start(struct ast_channel *chan) {
   pvt->t9 = start_timer(90000, t9_timeout, chan);
 }
 
-static int t12_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t12_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
 
   ast_log(LOG_NOTICE, "T12 timeout (waiting for BLA).\n");
   isup_send_blk(pvt);
@@ -1120,8 +1125,8 @@ static void t12_start(struct ss7_chan *pvt) {
   pvt->t12 = start_timer(30000, t12_timeout, pvt);
 }
 
-static int t14_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t14_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
 
   ast_log(LOG_NOTICE, "T14 timeout (waiting for UBA).\n");
   isup_send_ubl(pvt);
@@ -1151,8 +1156,8 @@ static void t16_clear(struct ss7_chan *pvt) {
   }
 }
 
-static int t16_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t16_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
 
   /* For the long T16 timeout, alert maintenance, and switch to sending
      "reset circuit". */
@@ -1175,8 +1180,8 @@ static void t17_clear(struct ss7_chan *pvt) {
   }
 }
 
-static int t17_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t17_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
 
   /* For the long T17 timeout, alert maintenance, and switch to sending
      "reset circuit". */
@@ -1199,8 +1204,8 @@ static void t18_clear(struct ss7_chan *pvt) {
   }
 }
 
-static int t18_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t18_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
 
   /* For the long T18 timeout, alert maintenance, and switch to sending
      "reset circuit". */
@@ -1225,8 +1230,8 @@ static void t19_clear(struct ss7_chan *pvt) {
   }
 }
 
-static int t19_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t19_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
 
   /* For the long T19 timeout, alert maintenance, and switch to sending
      "reset circuit". */
@@ -1249,8 +1254,8 @@ static void t20_clear(struct ss7_chan *pvt) {
   }
 }
 
-static int t20_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t20_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
 
   /* For the long T20 timeout, alert maintenance, and switch to sending
      "reset circuit". */
@@ -1275,8 +1280,8 @@ static void t21_clear(struct ss7_chan *pvt) {
   }
 }
 
-static int t21_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t21_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
 
   /* For the long T21 timeout, alert maintenance, and switch to sending
      "reset circuit". */
@@ -1299,8 +1304,8 @@ static void t22_clear(struct ss7_chan *pvt) {
   }
 }
 
-static int t22_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t22_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
 
   ast_log(LOG_NOTICE, "T22 timeout (No \"circuit group reset acknowledge\" from peer) CIC=%d.\n", pvt->cic);
   isup_send_grs(pvt, pvt->grs_count, 0);
@@ -1321,8 +1326,8 @@ static void t23_clear(struct ss7_chan *pvt) {
   }
 }
 
-static int t23_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t23_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
 
   /* For the long T23 timeout, alert maintenance using LOG_WARNING. */
   ast_log(LOG_WARNING, "T23 timeout (No \"circuit group reset acknowledge\" from peer) CIC=%d.\n", pvt->cic);
@@ -1337,8 +1342,8 @@ static void t23_start(struct ss7_chan *pvt) {
   pvt->t23 = start_timer(10*60*1000, t23_timeout, pvt);
 }
 
-static int t35_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t35_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
 
   pvt->t35 = -1;
   if (pvt->link->linkset->t35_action) {
@@ -1366,8 +1371,8 @@ static void t35_start(struct ss7_chan* pvt)
   pvt->t35 = start_timer(pvt->link->linkset->t35_value, t35_timeout, pvt);
 }
 
-static int t36_timeout(void *arg) {
-  struct ss7_chan *pvt = arg;
+static int t36_timeout(const void *arg) {
+  struct ss7_chan *pvt = (struct ss7_chan*) arg;
 
   ast_log(LOG_NOTICE, "T36 timeout (waiting for COT or REL) CIC=%d.\n", pvt->cic);
   initiate_release_circuit(pvt, AST_CAUSE_NORMAL_TEMPORARY_FAILURE);
@@ -4491,7 +4496,7 @@ static int setup_cic(struct link* link, int channel)
     ast_log(LOG_WARNING, "Failed to allocate DSP for CIC=%d.\n", pvt->cic);
     return -1;
   }
-  ast_dsp_set_features(pvt->dsp, DSP_FEATURE_DTMF_DETECT);
+  ast_dsp_set_features(pvt->dsp, DSP_FEATURE_DIGIT_DETECT);
   ast_dsp_digitmode(pvt->dsp, DSP_DIGITMODE_DTMF | (link->relaxdtmf ? DSP_DIGITMODE_RELAXDTMF : 0));
 
   /* Set gain - Channel must be in audiomode when setting gain */

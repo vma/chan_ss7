@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <pthread.h>
 
+#include "asterisk.h"
 #define AST_API_MODULE
 #include <asterisk/linkedlists.h>
 #include <asterisk/time.h>

@@ -24,7 +24,7 @@
 
 
 int timers_wait(void);
-int start_timer(int msec, int (*cb)(void *), void *data);
+int start_timer(int msec, int (*cb)(const void *), void *data);
 void stop_timer(int tid);
 void run_timers(void);
 int timers_init(void);

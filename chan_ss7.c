@@ -33,6 +33,7 @@
 #include <sys/poll.h>
 #include <netinet/in.h>
 
+#include "asterisk.h"
 #include "asterisk/channel.h"
 #include "asterisk/module.h"
 #include "asterisk/logger.h"
@@ -246,19 +247,19 @@ static struct ast_cli_entry my_clis[] = {
 #endif
 };
 
-
 static void dump_pcap(FILE *f, struct mtp_event *event)
 {
   unsigned int sec  = event->dump.stamp.tv_sec;
   unsigned int usec  = event->dump.stamp.tv_usec - (event->dump.stamp.tv_usec % 1000) +
     event->dump.slinkno*2 + /* encode link number in usecs */
     event->dump.out /* encode direction in/out */;
+  int res;
 
-  fwrite(&sec, sizeof(sec), 1, f);
-  fwrite(&usec, sizeof(usec), 1, f);
-  fwrite(&event->len, sizeof(event->len), 1, f); /* number of bytes of packet in file */
-  fwrite(&event->len, sizeof(event->len), 1, f); /* actual length of packet */
-  fwrite(event->buf, 1, event->len, f);
+  res = fwrite(&sec, sizeof(sec), 1, f);
+  res = fwrite(&usec, sizeof(usec), 1, f);
+  res = fwrite(&event->len, sizeof(event->len), 1, f); /* number of bytes of packet in file */
+  res = fwrite(&event->len, sizeof(event->len), 1, f); /* actual length of packet */
+  res = fwrite(event->buf, 1, event->len, f);
   fflush(f);
 }
 
@@ -271,14 +272,15 @@ static void init_pcap_file(FILE *f)
   unsigned int sigfigs = 0;
   unsigned int snaplen = 102400;
   unsigned int linktype = 140;
+  int res;
 
-  fwrite(&magic, sizeof(magic), 1, f);
-  fwrite(&version_major, sizeof(version_major), 1, f);
-  fwrite(&version_minor, sizeof(version_minor), 1, f);
-  fwrite(&thiszone, sizeof(thiszone), 1, f);
-  fwrite(&sigfigs, sizeof(sigfigs), 1, f);
-  fwrite(&snaplen, sizeof(snaplen), 1, f);
-  fwrite(&linktype, sizeof(linktype), 1, f);
+  res = fwrite(&magic, sizeof(magic), 1, f);
+  res = fwrite(&version_major, sizeof(version_major), 1, f);
+  res = fwrite(&version_minor, sizeof(version_minor), 1, f);
+  res = fwrite(&thiszone, sizeof(thiszone), 1, f);
+  res = fwrite(&sigfigs, sizeof(sigfigs), 1, f);
+  res = fwrite(&snaplen, sizeof(snaplen), 1, f);
+  res = fwrite(&linktype, sizeof(linktype), 1, f);
 }
 
 /* Queue a request to the MTP thread. */
@@ -733,7 +735,7 @@ static void *monitor_main(void *data) {
 	  /* Empty the pipe before pulling from fifo. This way the race
 	     condition between mtp and monitor threads may cause spurious
 	     wakeups, but not loss/delay of messages. */
-	  read(fds[i].fd, dummy, sizeof(dummy));
+	  res = read(fds[i].fd, dummy, sizeof(dummy));
 
 	  /* Process all available events. */
 	  while((res = lffifo_get(receive_fifo, eventbuf, sizeof(eventbuf))) != 0) {

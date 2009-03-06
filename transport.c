@@ -44,10 +44,14 @@
 #include <dahdi/user.h>
 #define FAST_HDLC_NEED_TABLES
 #include <dahdi/fasthdlc.h>
+#define DAHDI_DEV "/dev/dahdi"
+#define DAHDI_DEV_CHANNEL "/dev/dahdi/channel"
 #else
 #include "zaptel.h"
 #define FAST_HDLC_NEED_TABLES
 #include "fasthdlc.h"
+#define DAHDI_DEV "/dev/zap"
+#define DAHDI_DEV_CHANNEL "/dev/zap/channel"
 #define DAHDI_AUDIOMODE ZT_AUDIOMODE
 #define DAHDI_AUDIOMODE ZT_AUDIOMODE
 #define DAHDI_BUFFERINFO ZT_BUFFERINFO
@@ -172,12 +176,12 @@ int openchannel(struct link* link, int channel)
 {
   int cic = link->first_cic + channel;
   int zapid = link->first_zapid + channel + 1;
-  int fd = open("/dev/zap/channel", O_RDWR | O_NONBLOCK);
+  int fd = open(DAHDI_DEV_CHANNEL, O_RDWR | O_NONBLOCK);
   int parm, res;
 
   ast_log(LOG_DEBUG, "Configuring CIC %d on zaptel device %d.\n", cic, zapid);
   if(fd < 0) {
-    ast_log(LOG_ERROR, "Unable to open /dev/zap/channel: %s.\n", strerror(errno));
+    ast_log(LOG_ERROR, "Unable to open %s: %s.\n", DAHDI_DEV_CHANNEL, strerror(errno));
     return -1;
   }
   res = ioctl(fd, DAHDI_SPECIFY, &zapid);
@@ -227,14 +231,14 @@ int openschannel(struct link* link)
   int fd, res;
   int zapid = link->schannel + link->first_zapid;
 
-  sprintf(devname, "/dev/zap/%d", zapid);
+  sprintf(devname, "%s/%d", DAHDI_DEV, zapid);
   fd = open(devname, O_RDWR);
   if(fd < 0) {
     char devname2[100];
-    strcpy(devname2, "/dev/zap/channel");
+    strcpy(devname2, DAHDI_DEV_CHANNEL);
     fd = open(devname2, O_RDWR);
     if(fd < 0) {
-      ast_log(LOG_WARNING, "Unable to open signalling link zaptel devices %s and %s: %s\n", devname, devname2, strerror(errno));
+      ast_log(LOG_WARNING, "Unable to open signalling link devices %s and %s: %s\n", devname, devname2, strerror(errno));
       goto fail;
     }
     if (ioctl(fd, DAHDI_SPECIFY, &zapid)) {

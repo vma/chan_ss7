@@ -41,6 +41,7 @@
 #include <sys/poll.h>
 #include <sys/ioctl.h>
 
+#include "asterisk.h"
 #include "asterisk/config.h"
 #include "asterisk/logger.h"
 #include "asterisk/strings.h"

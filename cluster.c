@@ -42,6 +42,7 @@
 #include <sys/ioctl.h>
 #include <sys/time.h>
 
+#include "asterisk.h"
 #include "asterisk/options.h"
 #include "asterisk/logger.h"
 #include "asterisk/config.h"

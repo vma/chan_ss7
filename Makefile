@@ -1,12 +1,12 @@
 # INSTALL_PREFIX may be overridden to install elsewhere from /usr.
 INSTALL_PREFIX = /usr/local/ss7
 
-VERSION=1.1
+VERSION=1.2-svn
 
 # INCLUDE may be overridden to find asterisk and zaptel includes in
 # non-standard places.
-INCLUDE+=-I../source/telephony/zaptel/kernel
-#INCLUDE+=-I../source/telephony/dahdi/include
+#INCLUDE+=-I../source/telephony/zaptel/kernel
+INCLUDE+=-I../source/telephony/dahdi/include
 INCLUDE+=-I../source/telephony/asterisk/include
 
 CC=gcc
@@ -19,7 +19,7 @@ CFLAGS+=-DCHAN_SS7_VERSION=\"$(VERSION)\"
 
 # -DMODULETEST
 
-#CFLAGS+=-DDAHDI
+CFLAGS+=-DDAHDI
 
 SOLINK=-shared
 

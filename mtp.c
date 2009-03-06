@@ -368,7 +368,7 @@ static void mtp_put(mtp2_t *m, struct mtp_event *event) {
     }
   } else {
     /* Wake up the other end. */
-    write(receivepipe[1], "\0", 1);
+    res = write(receivepipe[1], "\0", 1);
   }
   if ((event->typ == MTP_EVENT_ISUP) || (event->typ == MTP_EVENT_STATUS)) {
     cluster_mtp_received(m ? m->link : NULL, event);
@@ -437,8 +437,8 @@ static void mtp2_dump_raw(mtp2_t *m, unsigned char *buf, int len, int out) {
 }
 #endif
 
-static int t17_timeout(void *data) {
-  mtp2_t *m = data;
+static int t17_timeout(const void *data) {
+  mtp2_t *m = (mtp2_t*) data;
   fifo_log(m, LOG_DEBUG, "link %s\n", m->name);
   m->mtp3_t17 = -1;
   start_initial_alignment(m, "t17_timeout");
@@ -457,8 +457,8 @@ static void t17_start(mtp2_t *m) {
   m->mtp3_t17 = mtp_sched_add(mtp2_sched, 1200, t17_timeout, m);
 }
 
-static int t1_timeout(void *data) {
-  mtp2_t *m = data;
+static int t1_timeout(const void *data) {
+  mtp2_t *m = (mtp2_t*) data;
   fifo_log(m, LOG_WARNING, "MTP2 timer T1 timeout (peer failed to complete "
 	   "initial alignment), initial alignment failed on link '%s'.\n", m->name);
   m->mtp2_t1 = -1;
@@ -478,8 +478,8 @@ static void t1_start(mtp2_t *m) {
   m->mtp2_t1 = mtp_sched_add(mtp2_sched, 45000, t1_timeout, m);
 }
 
-static int t2_timeout(void *data) {
-  mtp2_t *m = data;
+static int t2_timeout(const void *data) {
+  mtp2_t *m = (mtp2_t*) data;
   fifo_log(m, LOG_WARNING, "MTP2 timer T2 timeout (failed to receive 'O', 'N', "
 	   "or 'E' after sending 'O'), initial alignment failed on link '%s'.\n", m->name);
   m->mtp2_t2 = -1;
@@ -499,8 +499,8 @@ static void t2_start(mtp2_t *m) {
   m->mtp2_t2 = mtp_sched_add(mtp2_sched, 75000, t2_timeout, m);
 }
 
-static int t3_timeout(void *data) {
-  mtp2_t *m = data;
+static int t3_timeout(const void *data) {
+  mtp2_t *m = (mtp2_t*) data;
   fifo_log(m, LOG_WARNING, "MTP2 timer T3 timeout (failed to receive 'N', "
 	   "or 'E' after sending 'O'), initial alignment failed on link '%s'.\n", m->name);
   m->mtp2_t3 = -1;
@@ -520,8 +520,8 @@ static void t3_start(mtp2_t *m) {
   m->mtp2_t3 = mtp_sched_add(mtp2_sched, 1500, t3_timeout, m);
 }
 
-static int t4_timeout(void *data) {
-  mtp2_t *m = data;
+static int t4_timeout(const void *data) {
+  mtp2_t *m = (mtp2_t*) data;
   fifo_log(m, LOG_DEBUG, "Proving successful on link '%s'.\n", m->name);
   m->state = MTP2_READY;
   m->mtp2_t4 = -1;
@@ -756,8 +756,8 @@ static void deliver_l4(mtp2_t *m, unsigned char *sif, int len, int sio) {
   mtp_put(m, event);
 }
 
-static int timeout_t7(void *data) {
-  mtp2_t *m = data;
+static int timeout_t7(const void *data) {
+  mtp2_t *m = (mtp2_t*) data;
 
   m->mtp2_t7 = -1;
   fifo_log(m, LOG_WARNING, "T7 timeout (excessive delay of acknowledgement) on link '%s', state=%d.\n", m->name, m->state);
@@ -945,9 +945,9 @@ static void mtp3_set_sls(ss7_variant variant, int sls, unsigned char *buf) {
 /* Handle Q.707 test-and-maintenance procedure.
    Send a periodic SLTM message, listen for SLTA.
 */
-static int mtp3_send_sltm(void *data); /* For mutual recursion */
-static int timeout_sltm_t1(void *data) {
-  mtp2_t *m = data;
+static int mtp3_send_sltm(const void *data); /* For mutual recursion */
+static int timeout_sltm_t1(const void *data) {
+  mtp2_t *m = (mtp2_t*) data;
 
   if(m->sltm_tries == 1) {
     fifo_log(m, LOG_WARNING, "No SLTA received within Q.707 timer T1, trying again on link '%s'.\n", m->name);
@@ -966,9 +966,9 @@ static unsigned char sltm_pattern[15] =
   { 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
     0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff };
 
-static int mtp3_send_sltm(void *data) {
+static int mtp3_send_sltm(const void *data) {
   unsigned char message_sltm[24];
-  mtp2_t *m = data;
+  mtp2_t *m = (mtp2_t*) data;
   int subservice = m->subservice;
 
   if (subservice == -1)

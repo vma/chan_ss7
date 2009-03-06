@@ -36,6 +36,7 @@
 #ifdef MTP_STANDALONE
 #include "aststubs.h"
 #else
+#include "asterisk.h"
 #include "asterisk/sched.h"
 #include "asterisk/lock.h"
 #define mtp_sched_add ast_sched_add
@@ -94,7 +95,7 @@ int timers_wait(void)
 }
 
 
-int start_timer(int msec, int (*cb)(void *), void *data)
+int start_timer(int msec, int (*cb)(const void *), void *data)
 {
   int id = mtp_sched_add(monitor_sched, msec, cb, data);
   if(msec < MONITOR_FREQ) {
