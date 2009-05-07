@@ -59,9 +59,7 @@
 #include "asterisk/alaw.h"
 #include "asterisk/ulaw.h"
 
-#ifdef DAHDI
-#include <dahdi/user.h>
-#else
+#ifdef USE_ZAPTEL
 #include "zaptel.h"
 #define DAHDI_DIALING ZT_DIALING
 #define DAHDI_EVENT_DIALCOMPLETE ZT_EVENT_DIALCOMPLETE
@@ -70,6 +68,8 @@
 #define DAHDI_LAW_MULAW ZT_LAW_MULAW
 #define DAHDI_SETGAINS ZT_SETGAINS
 #define dahdi_gains zt_gains
+#else
+#include <dahdi/user.h>
 #endif
 
 #ifndef DSP_FEATURE_DIGIT_DETECT
@@ -132,8 +132,7 @@ struct ss7_chan {
   int has_inband_ind;
   int charge_indicator;
   int is_digital;
-  /* Circuit blocking status: {local,remote} {maintenance,hardware}. */
-  enum { BL_LM=1, BL_LH=2, BL_RM=4, BL_RH=8, BL_UNEQUIPPED=0x10, BL_LINKDOWN=0x20 } blocked;
+  block blocked;
   /* Circuit equipped */
   int equipped;
 
@@ -267,6 +266,22 @@ static struct lffifo **mtp_send_fifo;
 #define ast_strdup(s) strdup(s)
 #define ast_malloc(d) malloc(d)
 #endif  
+
+#ifdef USE_ASTERISK_1_2
+#define	AST_FRAME_SET_BUFFER(fr, _base, _ofs, _datalen)	\
+	{					\
+	(fr)->data = (char *)_base + (_ofs);	\
+	(fr)->offset = (_ofs);			\
+	(fr)->datalen = (_datalen);		\
+	}
+#define FRAME_DATA(fr,offset) (((unsigned char*) (fr)->data) + offset)
+#else
+#ifdef USE_ASTERISK_1_4
+#define FRAME_DATA(fr,offset) (((unsigned char*) (fr)->data) + offset)
+#else
+#define FRAME_DATA(fr,offset) (((unsigned char*) (fr)->data.ptr) + offset)
+#endif
+#endif
 
 static int usecnt = 0;
 
@@ -1442,7 +1457,7 @@ static void send_init_grs(struct linkset* linkset) {
       if(linkset->cic_list[i] && linkset->cic_list[i]->equipped) {
 	/* Clear the blocked status for the circuits; any remote blocking will be
 	   reported by the peer. */
-	linkset->cic_list[i]->blocked = 0;
+	linkset->cic_list[i]->blocked = linkset->blocked[i];
 	/* Look for the start of a range. */
 	if(first_equipped == -1) {
 	  first_equipped = i;
@@ -1477,7 +1492,7 @@ static void send_init_grs(struct linkset* linkset) {
            reported by the peer. */
 	struct ss7_chan *pvt = linkset->cic_list[i];
 	ast_mutex_lock(&pvt->lock);
-        linkset->cic_list[i]->blocked = 0;
+        linkset->cic_list[i]->blocked = linkset->blocked[i];
 	pvt->state = ST_SENT_REL;
 	reset_circuit(pvt);
 	ast_mutex_unlock(&pvt->lock);
@@ -1497,7 +1512,7 @@ static void release_circuit(struct ss7_chan* pvt)
 {
   struct ast_channel *chan = pvt->owner;
   if(chan != NULL) {
-    ast_mutex_lock(&chan->lock);
+    ast_channel_lock(chan);
   }
   ast_mutex_lock(&pvt->lock);
 
@@ -1525,7 +1540,7 @@ static void release_circuit(struct ss7_chan* pvt)
 
   ast_mutex_unlock(&pvt->lock);
   if(chan != NULL) {
-    ast_mutex_unlock(&chan->lock);
+    ast_channel_unlock(chan);
   }
 }
 
@@ -2058,7 +2073,7 @@ static int ss7_hangup(struct ast_channel *chan) {
   /* Digium insists that ss7_hangup() must be called with chan->lock() held,
      even though it is the wrong thing to do (bug 5051). So we have to unlock
      it on entry and re-lock it on exit to get sane locking semantics. */
-  ast_mutex_unlock(&chan->lock);
+  ast_channel_unlock(chan);
 
   /* First remove us from the global circuit list. */
   lock_global();
@@ -2113,7 +2128,7 @@ static int ss7_hangup(struct ast_channel *chan) {
 
   ast_update_use_count();
 
-  ast_mutex_lock(&chan->lock);  /* See above */
+  ast_channel_lock(chan);  /* See above */
 
   return 0;
 }
@@ -2191,14 +2206,14 @@ static void ss7_handle_event(struct ss7_chan *pvt, int event) {
   }
 }
 
-static void get_zaptel_event(struct ss7_chan* pvt)
+static void get_dahdi_event(struct ss7_chan* pvt)
 {
   int res, event;
 
   /* While these should really be handled in ss7_exception(), they can
      also occur here, probably because of a race between the zaptel
      driver and the channel poll() loop. */
-  res = io_get_zaptel_event(pvt->zaptel_fd, &event);
+  res = io_get_dahdi_event(pvt->zaptel_fd, &event);
   if(res < 0) {
     ast_mutex_unlock(&pvt->lock);
     ast_log(LOG_WARNING, "Error reading zaptel event for CIC=%d: %s.\n",
@@ -2229,12 +2244,10 @@ static struct ast_frame *ss7_read(struct ast_channel * chan) {
   memset(&pvt->frame, 0, sizeof(pvt->frame));
   pvt->frame.frametype = AST_FRAME_VOICE;
   pvt->frame.subclass = AST_FORMAT_ALAW;
-  pvt->frame.datalen = AUDIO_READSIZE;
   pvt->frame.samples = AUDIO_READSIZE;
   pvt->frame.mallocd = 0;
-  pvt->frame.offset = AST_FRIENDLY_OFFSET;
   pvt->frame.src = NULL;
-  pvt->frame.data = &(pvt->buffer[AST_FRIENDLY_OFFSET]);
+  AST_FRAME_SET_BUFFER(&pvt->frame, pvt->buffer, AST_FRIENDLY_OFFSET, AUDIO_READSIZE);
 
   memset(pvt->buffer, 0, sizeof(pvt->buffer));
   sofar = 0;
@@ -2260,7 +2273,7 @@ static struct ast_frame *ss7_read(struct ast_channel * chan) {
         break;
       } else if(errno == ELAST) {
 	struct pollfd fds[1];
-	get_zaptel_event(pvt);
+	get_dahdi_event(pvt);
 	fds[0].fd = pvt->zaptel_fd;
 	fds[0].events = POLLIN;
 	/* we are trying to read data, wait up to 20 msec for next frame */
@@ -2319,7 +2332,7 @@ static struct ast_frame *ss7_read(struct ast_channel * chan) {
 
 static int ss7_write(struct ast_channel * chan, struct ast_frame *frame) {
   struct ss7_chan *pvt = chan->tech_pvt;
-  int res, sofar;
+  int res, sofar, retry = 20;
 
   ast_mutex_lock(&pvt->lock);
 
@@ -2337,7 +2350,7 @@ static int ss7_write(struct ast_channel * chan, struct ast_frame *frame) {
 
   sofar = 0;
   while(sofar < frame->datalen) {
-    res = write(pvt->zaptel_fd, (unsigned char *)frame->data + sofar, frame->datalen - sofar);
+    res = write(pvt->zaptel_fd, FRAME_DATA(frame, sofar), frame->datalen - sofar);
     if(res > 0) {
       sofar += res;
     } else if(res == 0) {
@@ -2352,6 +2365,11 @@ static int ss7_write(struct ast_channel * chan, struct ast_frame *frame) {
 	  static struct timeval lastreport = {0, 0};
 	  static int supress = 0;
 	  struct timeval now;
+	  if (retry--) {
+	    struct timespec delay = {0, 500};
+	    nanosleep(&delay, NULL);
+	    continue;
+	  }
 	  ast_mutex_unlock(&pvt->lock);
 	  gettimeofday(&now, NULL);
 	  if (now.tv_sec - lastreport.tv_sec > 10) {
@@ -2365,7 +2383,7 @@ static int ss7_write(struct ast_channel * chan, struct ast_frame *frame) {
 	  return 0;
 	}
       } else if(errno == ELAST) {
-	get_zaptel_event(pvt);
+	get_dahdi_event(pvt);
       } else {
         ast_mutex_unlock(&pvt->lock);
         ast_log(LOG_WARNING, "Write error on CIC=%d: %s.\n", pvt->cic, strerror(errno));
@@ -2388,14 +2406,12 @@ static struct ast_frame *ss7_exception(struct ast_channel *chan) {
   memset(&pvt->frame, 0, sizeof(pvt->frame));
   pvt->frame.frametype = AST_FRAME_NULL;
   pvt->frame.subclass = 0;
-  pvt->frame.datalen = 0;
   pvt->frame.samples = 0;
   pvt->frame.mallocd = 0;
-  pvt->frame.offset = AST_FRIENDLY_OFFSET;
   pvt->frame.src = NULL;
-  pvt->frame.data = NULL;
+  AST_FRAME_SET_BUFFER(&pvt->frame, NULL, 0, 0);
 
-  res = io_get_zaptel_event(pvt->zaptel_fd, &event);
+  res = io_get_dahdi_event(pvt->zaptel_fd, &event);
   if(res < 0) {
     ast_log(LOG_WARNING, "Error reading zaptel event for CIC=%d: %s.\n",
             pvt->cic, strerror(errno));
@@ -2544,7 +2560,7 @@ static void handle_GRS_send_hwblock(struct ss7_chan* ipvt, struct isup_msg *grs_
     struct ss7_chan *pvt = linkset->cic_list[cic]; /* Checked non-NULL in previous loop */
     struct ast_channel *chan = pvt->owner;
     if(chan) {
-      ast_mutex_lock(&chan->lock);
+      ast_channel_lock(chan);
     }
     ast_mutex_lock(&pvt->lock);
     switch(pvt->state) {
@@ -2577,7 +2593,7 @@ static void handle_GRS_send_hwblock(struct ss7_chan* ipvt, struct isup_msg *grs_
     }
     ast_mutex_unlock(&pvt->lock);
     if(chan) {
-      ast_mutex_unlock(&chan->lock);
+      ast_channel_unlock(chan);
     }
   }
 
@@ -2808,6 +2824,11 @@ static void process_iam(struct ss7_chan *pvt, struct isup_msg *inmsg)
     return;
   }
   ast_log(LOG_DEBUG, "IAM cic=%d, owner=0x%08lx\n", pvt->cic, (unsigned long) pvt->owner);
+  if(pvt->blocked & (BL_LH|BL_LM)) {
+    ast_log(LOG_DEBUG, "IAM cic=%d, is blocked, sending BLK\n", pvt->cic);
+    isup_send_blk(pvt);
+    return;
+  }
   if(pvt->owner) {
     ast_log(LOG_ERROR, "Non-NULL chan found for idle CIC=%d, this shouldn't "
 	    "have happened?!?.\n", pvt->cic);
@@ -3626,7 +3647,8 @@ static void process_isup_message(struct link* slink, struct isup_msg *inmsg)
 {
   if (inmsg->opc != slink->linkset->dpc) {
     ast_log(LOG_DEBUG, "Got ISUP message from unconfigured PC=%d, typ=%s, CIC=%d\n", inmsg->opc, isupmsg(inmsg->typ), inmsg->cic);
-    isup_send_unequipped(slink, inmsg->cic, inmsg->opc);
+    if (this_host->opc != inmsg->opc) /* typical config error, swapped point codes */
+      isup_send_unequipped(slink, inmsg->cic, inmsg->opc);
     return;
   }
 
@@ -3881,6 +3903,7 @@ static void *continuity_check_thread_main(void *data) {
 	  unsigned char buffer[AST_FRIENDLY_OFFSET + AUDIO_READSIZE];
 	  int total = 0;
 	  int p = 0;
+	  int retry = 20;
 	  struct ss7_chan* pvt = fds_pvt[i];
 	  /* No need to take to chan->lock */
 	  ast_mutex_lock(&pvt->lock);
@@ -3890,8 +3913,13 @@ static void *continuity_check_thread_main(void *data) {
 	      if(errno == EINTR) {
 		/* Just try again. */
 	      } else if(errno == ELAST) {
-		get_zaptel_event(pvt);
+		get_dahdi_event(pvt);
 	      } else {
+		if (retry--) {
+		  struct timespec delay = {0, 500};
+		  nanosleep(&delay, NULL);
+		  continue;
+		}
 		ast_log(LOG_NOTICE, "read() failure, errno=%d: %s\n",
 			errno, strerror(errno));
 		break;
@@ -3901,12 +3929,18 @@ static void *continuity_check_thread_main(void *data) {
 	      total += count;
 	    }
 	  }
+	  retry = 20;
 	  while (total > 0) {
 	    int count = write(fds[i].fd, &buffer[p], total);
 	    if(count < 0) {
 	      if(errno == EINTR) {
 		/* Just try again. */
 	      } else {
+		if (retry--) {
+		  struct timespec delay = {0, 500};
+		  nanosleep(&delay, NULL);
+		  continue;
+		}
 		ast_log(LOG_NOTICE, "write() failure, errno=%d: %s\n",
 			errno, strerror(errno));
 		break;
@@ -4112,8 +4146,8 @@ int cmd_linestat(int fd, int argc, char *argv[]) {
 
     ast_cli(fd, "Linkset: %s\n", linkset->name);
     for(i = linkset->first_cic; i <= linkset->last_cic; i++) {
-      char blbuf[100];
-      char statbuf[50];
+      char blbuf[1000];
+      char statbuf[1000];
       struct ss7_chan* pvt = linkset->cic_list[i];
       if (!pvt) continue;
       *blbuf = 0;
@@ -4411,12 +4445,10 @@ static void init_pvt(struct ss7_chan *pvt, int cic) {
   memset(&pvt->frame, 0, sizeof(pvt->frame));
   pvt->frame.frametype = AST_FRAME_VOICE;
   pvt->frame.subclass = AST_FORMAT_ALAW;
-  pvt->frame.datalen = AUDIO_READSIZE;
   pvt->frame.samples = AUDIO_READSIZE;
   pvt->frame.mallocd = 0;
-  pvt->frame.offset = AST_FRIENDLY_OFFSET;
   pvt->frame.src = NULL;
-  pvt->frame.data = &(pvt->buffer[AST_FRIENDLY_OFFSET]);
+  AST_FRAME_SET_BUFFER(&pvt->frame, pvt->buffer, AST_FRIENDLY_OFFSET, AUDIO_READSIZE);
   pvt->sending_dtmf = 0;
   pvt->dsp = NULL;
   pvt->hangupcause = 0;
@@ -4485,6 +4517,7 @@ static int setup_cic(struct link* link, int channel)
     ast_copy_string(pvt->language, lang, sizeof(pvt->language));
   }
 
+  pvt->blocked = link->linkset->blocked[cic];
   link->linkset->cic_list[cic] = pvt;
   add_to_idlelist(pvt);
 
@@ -4497,7 +4530,11 @@ static int setup_cic(struct link* link, int channel)
     return -1;
   }
   ast_dsp_set_features(pvt->dsp, DSP_FEATURE_DIGIT_DETECT);
+#if defined(USE_ASTERISK_1_2) ||  defined(USE_ASTERISK_1_4)
   ast_dsp_digitmode(pvt->dsp, DSP_DIGITMODE_DTMF | (link->relaxdtmf ? DSP_DIGITMODE_RELAXDTMF : 0));
+#else
+  ast_dsp_set_digitmode(pvt->dsp, DSP_DIGITMODE_DTMF | (link->relaxdtmf ? DSP_DIGITMODE_RELAXDTMF : 0));
+#endif
 
   /* Set gain - Channel must be in audiomode when setting gain */
   set_audiomode(pvt->zaptel_fd);

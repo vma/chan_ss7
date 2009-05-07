@@ -41,12 +41,17 @@
 #include <sys/poll.h>
 #include <sys/ioctl.h>
 
+#include "astversion.h"
+#ifdef MTP_STANDALONE
+#include "aststubs.h"
+#else
 #include "asterisk.h"
 #include "asterisk/config.h"
 #include "asterisk/logger.h"
 #include "asterisk/strings.h"
 #include "asterisk/abstract_jb.h"
 
+#endif
 
 #include "config.h"
 
@@ -118,7 +123,7 @@ struct linkset* find_linkset_for_dpc(int pc, int cic)
   return NULL;
 }
 
-struct linkset* lookup_linkset(char* name) {
+struct linkset* lookup_linkset(const char* name) {
   int i;
   for (i = 0; i < n_linksets; i++) {
     if (!strcmp(linksets[i].name, name))
@@ -127,7 +132,7 @@ struct linkset* lookup_linkset(char* name) {
   return NULL;
 }
 
-static struct link* lookup_link(char* name) {
+static struct link* lookup_link(const char* name) {
   int i;
   for (i = 0; i < n_links; i++) {
     if (!strcmp(links[i].name, name))
@@ -136,7 +141,7 @@ static struct link* lookup_link(char* name) {
   return NULL;
 }
 
-static struct host* lookup_host(char* name) {
+static struct host* lookup_host(const char* name) {
   int i;
   for (i = 0; i < n_hosts; i++)
     if (!strcmp(hosts[i].name, name))
@@ -209,12 +214,12 @@ static void show_config(void)
   }
 }
 
-static int load_config_linkset(struct ast_config *cfg, char* cat)
+static int load_config_linkset(struct ast_config *cfg, const char* cat)
 {
   struct ast_variable *v;
-  char *context = "default";
-  char *language = "";
-  char *linkset_name = &cat[strlen("linkset-")];
+  const char *context = "default";
+  const char *language = "";
+  const char *linkset_name = &cat[strlen("linkset-")];
   struct linkset* linkset = &linksets[n_linksets];
   int has_enabled = 0, has_context = 0, has_language = 0, has_hunt_policy = 0, has_use_connect = 0, has_enable_st = 0, has_subservice = 0;
   int i;
@@ -235,6 +240,8 @@ static int load_config_linkset(struct ast_config *cfg, char* cat)
   linkset->combined = 0;
   linkset->variant = ITU_SS7;
   linkset->grs = 1;
+  for (i = 0; i < MAX_CIC; i++)
+    linkset->blocked[i] = 0;
 
   context = "default";
   language = "";
@@ -356,6 +363,28 @@ static int load_config_linkset(struct ast_config *cfg, char* cat)
       if ((strcasecmp(v->value, "0") == 0) || (strcasecmp(v->value, "no") == 0)) {
 	linkset->grs = 0;
       }
+    } else if((0 == strcasecmp(v->name, "blockin")) || (0 == strcasecmp(v->name, "blockout"))) {
+      block b = (0 == strcasecmp(v->name, "blockin")) ? BL_LM : BL_NOUSE;
+      char block_spec_buf[10000] = {0,};
+      char *p;
+      char *spec;
+
+      ast_copy_string(block_spec_buf, v->value, sizeof(block_spec_buf));
+      spec = &block_spec_buf[0];
+      p = strsep(&spec, ",");
+      while(p && *p) {
+	int i, first, last;
+	if(sscanf(p, "%d-%d", &first, &last) != 2 ||
+	   first < 0 || first > last || last > MAX_CIC) {
+	  ast_log(LOG_DEBUG, "Block range '%s' is %d %d \n", p, first,last);
+	  ast_log(LOG_ERROR, "Illegal block range '%s' for "
+		  "channel specification for link '%s'.\n", p, linkset_name);
+	  return -1;
+	}
+	for (i = first; i <= last; i++)
+	  linkset->blocked[i] |= b;
+	p = strsep(&spec, ",");
+      }
     } else {
       ast_log(LOG_ERROR, "Unknown config option '%s', aborting.\n", v->name);
       return -1;
@@ -406,13 +435,13 @@ static int load_config_linkset(struct ast_config *cfg, char* cat)
 }
 
 
-static int load_config_link(struct ast_config *cfg, char* cat)
+static int load_config_link(struct ast_config *cfg, const char* cat)
 {
   struct ast_variable *v;
 
   char *p;
   char *spec;
-  char *link_name = &cat[strlen("link-")];
+  const char *link_name = &cat[strlen("link-")];
   char chan_spec_buf[1000] = {0,};
   struct linkset* linkset = NULL;
   struct link* link = &links[n_links];
@@ -634,13 +663,13 @@ static int load_config_link(struct ast_config *cfg, char* cat)
   return 0;
 }
 
-static int load_config_host(struct ast_config *cfg, char* cat)
+static int load_config_host(struct ast_config *cfg, const char* cat)
 {
   struct ast_variable *v;
 
   char *p;
   char *spec;
-  char *host_name = &cat[strlen("host-")];
+  const char *host_name = &cat[strlen("host-")];
   struct host* host = &hosts[n_hosts];
   char links_spec_buf[1000] = {0,};
   int has_opc = 0, has_dpc = 0, has_links = 0, has_enabled = 0, has_if = 0;
@@ -997,10 +1026,15 @@ int load_config(int reload)
 {
   struct ast_config *cfg;
   static const char conffile_name[] = "ss7.conf";
-  char* prevcat = NULL;
+  const char* prevcat = NULL;
   int i, j, k;
 
+#if defined(USE_ASTERISK_1_2) ||  defined(USE_ASTERISK_1_4)
   cfg = ast_config_load(conffile_name);
+#else
+  struct ast_flags config_flags = {CONFIG_FLAG_NOCACHE};
+  cfg = ast_config_load(conffile_name, config_flags);
+#endif
   if(cfg == NULL) {
     ast_log(LOG_ERROR, "Unable to load config '%s'.\n", conffile_name);
     return -1;

@@ -23,6 +23,7 @@
 
 
 #include <stdio.h>
+#include <pthread.h>
 
 /* Log defines taken for asterisk/logger.h */
 #define VERBOSE_PREFIX_1 " "
@@ -81,6 +82,8 @@ extern char ast_config_AST_CONFIG_DIR[];
 extern int option_debug;
 struct ast_channel;
 
+#undef ast_log
+#undef ast_verbose
 void ast_log(int level, const char *file, int line, const char *function, const char *fmt, ...)
   __attribute__ ((format (printf, 5, 6)));
 void ast_verbose(const char *fmt, ...)
@@ -95,3 +98,35 @@ int mtp_sched_runq(struct sched_context *con);
 int mtp_sched_wait(struct sched_context *con);
 struct timeval ast_tvadd(struct timeval a, struct timeval b);
 
+#ifndef AST_MUTEX_DEFINE_STATIC
+#define AST_MUTEX_DEFINE_STATIC(mutex) pthread_mutex_t mutex;
+#endif
+
+#define ast_copy_string(a,b,c) snprintf(a, c, "%s", b)
+
+struct ast_jb_conf {int flags; int max_size; int resync_threshold; char* impl;};
+
+#define CONFIG_FLAG_NOCACHE
+struct ast_flags { int flags;};
+struct ast_variable {char* name; char* value; struct ast_variable* next;};
+struct ast_config {struct ast_variable* first;};
+#if defined(USE_ASTERISK_1_2) || defined(USE_ASTERISK_1_4)
+struct ast_config* ast_config_load(const char* filename);
+#else
+struct ast_config* ast_config_load(const char* filename, struct ast_flags flags);
+#endif
+void ast_config_destroy(struct ast_config* cfg);
+const char* ast_category_browse(struct ast_config* cfg, const char* cat);
+struct ast_variable* ast_variable_browse(const struct ast_config* cfg, const char* cat);
+int ast_jb_read_conf(struct ast_jb_conf *conf, const char *varname, const char *value);
+
+
+
+struct ast_cli_entry;
+#ifdef USE_ASTERISK_1_6
+int ast_cli_register_multiple(struct ast_cli_entry *e, int len);
+int ast_cli_unregister_multiple(struct ast_cli_entry *e, int len);
+#else
+void ast_cli_register_multiple(struct ast_cli_entry *e, int len);
+void ast_cli_unregister_multiple(struct ast_cli_entry *e, int len);
+#endif

@@ -23,10 +23,13 @@
  */
 
 
+#define AST_MODULE "chan_ss7"
+
 typedef enum {ITU_SS7, CHINA_SS7} ss7_variant;
 
 /* Hunting policy. */
 typedef enum { HUNT_ODD_LRU, HUNT_EVEN_MRU, HUNT_SEQ_LTH, HUNT_SEQ_HTL } hunting_policy;
+typedef enum { BL_LM=1, BL_LH=2, BL_RM=4, BL_RH=8, BL_UNEQUIPPED=0x10, BL_LINKDOWN=0x20, BL_NOUSE=0x40 } block;
 
 /* Upper bounds only determined by installed hardware, use decent values */
 #define MAX_E1_CONNECTOR_NO 16
@@ -74,6 +77,7 @@ struct linkset {
   /* Global circuit list. Protected by glock. */
   struct ss7_chan *cic_list[MAX_CIC];
   struct ss7_chan *idle_list;
+  block blocked[MAX_CIC];
   int inservice;
   int incoming_calls;
   int outgoing_calls;
@@ -177,8 +181,7 @@ int load_config(int reload);
 void destroy_config(void);
 int is_combined_linkset(struct linkset* ls1, struct linkset* ls2);
 struct linkset* find_linkset_for_dpc(int pc, int cic);
-struct linkset* lookup_linkset(char* name);
+struct linkset* lookup_linkset(const char* name);
 struct host* lookup_host_by_addr(struct in_addr);
 struct host* lookup_host_by_id(int hostix);
 struct ast_jb_conf *ss7_get_global_jbconf(void);
-

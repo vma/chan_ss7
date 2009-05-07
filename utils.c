@@ -35,6 +35,8 @@
 
 #ifdef MTP_STANDALONE
 #include "aststubs.h"
+#define mtp_mutex_lock pthread_mutex_lock
+#define mtp_mutex_unlock pthread_mutex_unlock
 #else
 #include "asterisk.h"
 #include "asterisk/sched.h"
@@ -45,19 +47,20 @@
 #define mtp_sched_wait ast_sched_wait
 #define mtp_sched_context_create sched_context_create
 #define mtp_sched_context_destroy sched_context_destroy
+#define mtp_mutex_lock ast_mutex_lock
+#define mtp_mutex_unlock ast_mutex_unlock
 #include "asterisk/logger.h"
 #include "asterisk/channel.h"
 #include "asterisk/module.h"
-
+#include "asterisk/utils.h"
+#include "astversion.h"
 
 #endif
-#include "asterisk/utils.h"
 
 struct sched_context *mtp_sched_context_create(void);
 void mtp_sched_context_destroy(struct sched_context *con);
 
 
-#include "astversion.h"
 #include "config.h"
 #include "mtp.h"
 #include "utils.h"
@@ -132,19 +135,19 @@ int timers_cleanup(void)
 
 void run_timers(void)
 {
-  ast_mutex_lock(&glock);
+  mtp_mutex_lock(&glock);
   mtp_sched_runq(monitor_sched);
-  ast_mutex_unlock(&glock);
+  mtp_mutex_unlock(&glock);
 }
 
 void lock_global(void)
 {
-  ast_mutex_lock(&glock);
+  mtp_mutex_lock(&glock);
 }
 
 void unlock_global(void)
 {
-  ast_mutex_unlock(&glock);
+  mtp_mutex_unlock(&glock);
 }
 
 

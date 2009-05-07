@@ -40,13 +40,7 @@
 #include <sys/ioctl.h>
 #include <fcntl.h>
 
-#ifdef DAHDI
-#include <dahdi/user.h>
-#define FAST_HDLC_NEED_TABLES
-#include <dahdi/fasthdlc.h>
-#define DAHDI_DEV "/dev/dahdi"
-#define DAHDI_DEV_CHANNEL "/dev/dahdi/channel"
-#else
+#ifdef USE_ZAPTEL
 #include "zaptel.h"
 #define FAST_HDLC_NEED_TABLES
 #include "fasthdlc.h"
@@ -72,12 +66,19 @@
 #define DAHDI_SPECIFY ZT_SPECIFY
 #define dahdi_bufferinfo zt_bufferinfo
 #define dahdi_dialoperation zt_dialoperation
+#else
+#include <dahdi/user.h>
+#define FAST_HDLC_NEED_TABLES
+#include <dahdi/fasthdlc.h>
+#define DAHDI_DEV "/dev/dahdi"
+#define DAHDI_DEV_CHANNEL "/dev/dahdi/channel"
 #endif
 
 
 #ifdef MTP_STANDALONE
 #include "aststubs.h"
 #else
+#include "asterisk.h"
 #include "asterisk/logger.h"
 #endif
 #include "config.h"
@@ -172,23 +173,40 @@ void clear_audiomode(int fd)
 }
 
 
+static int opendev(int zapid)
+{
+  int fd = open(DAHDI_DEV_CHANNEL, O_RDWR | O_NONBLOCK);
+  int res;
+
+  if(fd < 0) {
+    char devname[100];
+    sprintf(devname, "%s/%d", DAHDI_DEV, zapid);
+    fd = open(devname, O_RDWR | O_NONBLOCK);
+    if(fd < 0) {
+      ast_log(LOG_WARNING, "Unable to open signalling devices %s, %s and %s: %s\n", DAHDI_DEV_CHANNEL, "/dev/zap/channel", devname, strerror(errno));
+      return -1;
+    }
+    return fd;
+  }
+  res = ioctl(fd, DAHDI_SPECIFY, &zapid);
+  if(res) {
+    ast_log(LOG_WARNING, "Failure in DAHDI_SPECIFY for dahdi id %d: %s.\n", zapid, strerror(errno));
+    return -1;
+  }
+  return fd;
+}
+
 int openchannel(struct link* link, int channel)
 {
   int cic = link->first_cic + channel;
   int zapid = link->first_zapid + channel + 1;
-  int fd = open(DAHDI_DEV_CHANNEL, O_RDWR | O_NONBLOCK);
+  int fd;
   int parm, res;
 
-  ast_log(LOG_DEBUG, "Configuring CIC %d on zaptel device %d.\n", cic, zapid);
-  if(fd < 0) {
-    ast_log(LOG_ERROR, "Unable to open %s: %s.\n", DAHDI_DEV_CHANNEL, strerror(errno));
-    return -1;
-  }
-  res = ioctl(fd, DAHDI_SPECIFY, &zapid);
-  if(res) {
-    ast_log(LOG_WARNING, "Failure in DAHDI_SPECIFY for circuit %d: %s.\n", cic, strerror(errno));
-    return -1;
-  }
+  ast_log(LOG_DEBUG, "Configuring CIC %d on dahdi device %d.\n", cic, zapid);
+  fd = opendev(zapid);
+  if (fd < 0)
+    return fd;
   parm = DAHDI_LAW_ALAW;
   res = ioctl(fd, DAHDI_SETLAW, &parm);
   if(res) {
@@ -227,33 +245,19 @@ void flushchannel(int fd, int cic)
 int openschannel(struct link* link)
 {
   struct dahdi_bufferinfo bi;
-  char devname[100];
   int fd, res;
   int zapid = link->schannel + link->first_zapid;
 
-  sprintf(devname, "%s/%d", DAHDI_DEV, zapid);
-  fd = open(devname, O_RDWR);
-  if(fd < 0) {
-    char devname2[100];
-    strcpy(devname2, DAHDI_DEV_CHANNEL);
-    fd = open(devname2, O_RDWR);
-    if(fd < 0) {
-      ast_log(LOG_WARNING, "Unable to open signalling link devices %s and %s: %s\n", devname, devname2, strerror(errno));
-      goto fail;
-    }
-    if (ioctl(fd, DAHDI_SPECIFY, &zapid)) {
-      ast_log(LOG_WARNING, "Unable to specify channel %d: %s\n", zapid, strerror(errno));
-      goto fail;
-    }
-  }
-
+  fd = opendev(zapid);
+  if (fd < 0)
+    return fd;
   bi.txbufpolicy = DAHDI_POLICY_IMMEDIATE;
   bi.rxbufpolicy = DAHDI_POLICY_IMMEDIATE;
   bi.numbufs = NUM_ZAP_BUF;
   bi.bufsize = ZAP_BUF_SIZE;
   if (ioctl(fd, DAHDI_SET_BUFINFO, &bi)) {
     ast_log(LOG_WARNING, "Unable to set buffering policy on signalling link "
-            "zaptel device: %s\n", strerror(errno));
+            "dahdi device: %s\n", strerror(errno));
     goto fail;
   }
 
@@ -268,7 +272,7 @@ int openschannel(struct link* link)
   return -1;
 }
 
-int io_get_zaptel_event(int fd, int* e)
+int io_get_dahdi_event(int fd, int* e)
 {
   return ioctl(fd, DAHDI_GETEVENT, e);
 }
@@ -380,7 +384,7 @@ void flushchannel(int fd, int cic)
 {
 }
 
-int io_get_zaptel_event(int fd, int* e)
+int io_get_dahdi_event(int fd, int* e)
 {
   return 0;
 }

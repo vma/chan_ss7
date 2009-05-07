@@ -6,11 +6,13 @@ VERSION=1.2-svn
 # INCLUDE may be overridden to find asterisk and zaptel includes in
 # non-standard places.
 #INCLUDE+=-I../source/telephony/zaptel/kernel
+#CFLAGS+=-DUSE_ZAPTEL
 INCLUDE+=-I../source/telephony/dahdi/include
+
 INCLUDE+=-I../source/telephony/asterisk/include
 
 CC=gcc
-CFLAGS=$(INCLUDE) -g -pipe -Wall -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -D_REENTRANT -D_GNU_SOURCE -DPIC -fpic  -finline-functions
+CFLAGS+=$(INCLUDE) -g -pipe -Wall -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -D_REENTRANT -D_GNU_SOURCE -DPIC -fpic  -finline-functions
 CFLAGS+=-O4
 #CFLAGS+=-pg
 CFLAGS+=-DCHAN_SS7_VERSION=\"$(VERSION)\"
@@ -18,8 +20,6 @@ CFLAGS+=-DCHAN_SS7_VERSION=\"$(VERSION)\"
 #CFLAGS+=-DTESTINPUT
 
 # -DMODULETEST
-
-CFLAGS+=-DDAHDI
 
 SOLINK=-shared
 
@@ -30,16 +30,16 @@ endif
 MODTHDRS = $(MODTOBJS:.o=.h)
 MODTSRCS = $(MODTOBJS:.o=.c)
 
-HDRS = l4isup.h isup.h mtp.h utils.h config.h cluster.h lffifo.h transport.h aststubs.h astversion.h mtp3io.h $(MODTHDRS)
-SRCS = chan_ss7.c l4isup.c isup.c mtp.c utils.c config.c cluster.c lffifo.c transport.c mtp3io.c $(MODTSRCS)
-ALLSRCS = $(SRCS) astconfig.c aststubs.c mtp3io.c mtp3d.c
+HDRS = l4isup.h isup.h mtp.h utils.h config.h configparser.h cluster.h lffifo.h cli.h dump.h transport.h aststubs.h mtp3io.h $(MODTHDRS)
+SRCS = chan_ss7.c l4isup.c isup.c mtp.c utils.c config.c configparser.c cluster.c lffifo.c transport.c cli.c dump.c mtp3io.c $(MODTSRCS)
+ALLSRCS = $(SRCS) astversion.c configparser.c aststubs.c mtp3io.c mtp3d.c mtp3cli.c
 
 OBJS = $(SRCS:.c=.o)
 ALLOBJS = $(ALLSRCS:.c=.o)
 
 .PHONY: prepare all install clean release
 
-default: all mtp3d
+default: all mtp3d mtp3cli
 
 prepare:
 
@@ -49,8 +49,17 @@ all: chan_ss7.so mtp3d
 chan_ss7.so: $(OBJS)
 	$(CC) $(SOLINK) -o $@ $^
 
-mtp3d: mtp3d.o mtp3io.o aststubs.o mtp_standalone.o transport_standalone.o utils_standalone.o lffifo.o config.o astconfig.o isup.o
+mtp3d: mtp3d.o mtp3io.o aststubs.o mtp_standalone.o transport_standalone.o utils_standalone.o lffifo.o config_standalone.o configparser.o isup.o cli.o dump.o
 	$(CC) -o $@ $^ -lpthread
+
+mtp3cli: mtp3cli.o
+	$(CC) $(LDFLAGS) -o $@ $^ -lpthread
+
+astversion: astversion.c
+	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $^ -lpthread
+
+astversion.h: astversion
+	./$^ > $@.tmp && mv -f $@.tmp $@
 
 mtp3io.o: mtp3io.c
 	$(CC) -c $(CFLAGS) -o $@ $<
@@ -68,6 +77,9 @@ transport_standalone.o: transport.c
 	$(CC) -c -DMTP_STANDALONE $(CFLAGS) -o $@ $<
 
 utils_standalone.o: utils.c
+	$(CC) -c -DMTP_STANDALONE $(CFLAGS) -o $@ $<
+
+config_standalone.o: config.c
 	$(CC) -c -DMTP_STANDALONE $(CFLAGS) -o $@ $<
 
 chan_ss7.o: chan_ss7.c
@@ -104,7 +116,7 @@ install: chan_ss7.so
 	install -m 755 mtp3d $(INSTALL_PREFIX)/sbin
 
 clean:
-	rm -f chan_ss7.so mtp3d $(ALLOBJS) mtp_standalone.o transport_standalone.o utils_standalone.o .depend
+	rm -f chan_ss7.so mtp3d $(ALLOBJS) mtp_standalone.o transport_standalone.o utils_standalone.o config_standalone.o .depend
 	rm -f instdir/sbin/mtp3d \
 		instdir/sbin/safe_mtp3d \
 		instdir/etc/init.d/mtp3d \
@@ -162,5 +174,5 @@ etc/init.d/mtp3d:
 
 include .depend
 
-.depend: $(ALLSRCS) $(HDRS)
+.depend: astversion.h $(ALLSRCS) $(HDRS)
 	gcc -MM -E $(CFLAGS) $^ > $@.new && mv -f $@.new $@ || rm -f $@.new

@@ -27,6 +27,124 @@
 //define MTP3_SOCKETTYPE SOCK_SEQPACKET
 //define MTP3_IPPROTO IPPROTO_SCTP
 
+#define SS7_PROTO_ISUP 5
+#define SS7_PROTO_SCCP 3
+
+/* Max. MTP2 packet size, including sequence numbers, CRC, and two flags. */
+#define MTP_MAX_PCK_SIZE 280
+
+/* Structure used to send requests to the MTP thread. */
+#define MTP_REQ_MAX_SIZE (sizeof(struct mtp_req) + MTP_MAX_PCK_SIZE)
+
+struct mtp_req {
+  /* The "typ" fiend determines which element in the union is used. */
+  enum {
+    MTP_REQ_ISUP,               /* Queue ISUP MSU for sending on link */
+    MTP_REQ_SCCP,               /* Queue SCCP MSU for sending on link */
+    MTP_REQ_ISUP_FORWARD,       /* ISUP event to be sent on MTP */
+    MTP_REQ_LINK_DOWN,          /* Take link out of service */
+    MTP_REQ_LINK_UP,            /* Start initial alignment procedure */
+    MTP_REQ_REGISTER_L4,	/* Register layer 4 protocol */
+    MTP_REQ_CLI,                /* CLI interaction request */
+  } typ;
+
+  unsigned long seq_no;
+
+  union {
+    struct {
+      struct link* slink;
+      struct link* link;
+      int slinkix;
+    } isup;
+    struct {
+      struct link* slink;
+      int slinkix;
+    } sccp;
+    struct {
+      int linkix;
+      int keepdown;
+    } link;
+    struct {
+      int ss7_protocol;
+      int host_ix;
+      int linkix;
+      union {
+	struct {
+	  int subsystem;
+	} sccp;
+      };
+    } regist;
+  };
+
+  int len;
+  unsigned char buf[0];
+};
+
+/* Structure used to return events from the MTP thread. */
+#define MTP_EVENT_MAX_SIZE (sizeof(struct mtp_event) + 1000)
+struct mtp_event {
+  /* The "typ" field determines which element in the union is used. */
+  enum {
+    MTP_EVENT_ALIVE = 10,       /* Enum value above this indicate MTP_EVENT_... */
+    MTP_EVENT_ISUP,             /* ISUP MSU received on link */
+    MTP_EVENT_SCCP,             /* SCCP MSU received on link */
+    MTP_EVENT_REQ_REGISTER,	/* Require register */
+    MTP_EVENT_LOG,              /* Log message for ast_log() */
+    MTP_EVENT_DUMP,             /* Link data for frame-level debug dump */
+    MTP_EVENT_STATUS,           /* F.ex. "link down". */
+    MTP_EVENT_LAST,             /* Placeholder, Must be last in enumeration */
+  } typ;
+
+  unsigned long seq_no;
+
+  union {
+    struct {
+      struct link* slink;
+      struct link* link;
+      int slinkix;
+    } isup;
+    struct {
+      struct link* slink;
+      int slinkix;
+    } sccp;
+
+    struct {
+      int ss7_protocol;
+      int host_ix;
+      union {
+	struct {
+	  int slinkix;
+	} isup;
+      };
+    } regist;
+
+    struct {
+      int level;
+      const char *file;
+      int line;
+      const char *function;
+    } log;
+
+    struct {
+      int out;                  /* True if sent packet, false if received */
+      struct timeval stamp;        /* Timestamp */
+      int sls;		/* Signalling link selector */
+    } dump;
+
+    struct {
+      enum {
+	MTP_EVENT_STATUS_LINK_UP,
+	MTP_EVENT_STATUS_LINK_DOWN,
+	MTP_EVENT_STATUS_INSERVICE
+      } link_state;
+      struct link* link;
+    } status;
+  };
+
+  int len;
+  unsigned char buf[0];
+};
+
 
 int mtp3_setup_socket(int port, int schannel);
 int mtp3_connect_socket(const char* host, const char* port);

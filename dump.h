@@ -1,6 +1,6 @@
-/* astversion.h - Determine which asterisk version to use
+/* dump.h - chan_ss7/mtp3d dump
  * Author: Anders Baekgaard <ab@dicea.dk>
- * This work is included with chan_ss7, see copyright below.
+ * This work is derived from chan_ss7, see copyright below.
  */
 
 /*
@@ -22,12 +22,10 @@
  */
 
 
-#include "asterisk.h"
-#include "asterisk/module.h"
+extern int init_dump(int fd, const char* fn, int in, int out, int fisu, int lssu, int msu);
+extern void cleanup_dump(int fd, int in, int out);
+extern void dump_event(struct mtp_event *event);
+extern int dump_enabled(struct mtp_event *event);
+extern void dump_status(int fd);
 
-#ifdef AST_MODULE_INFO
-#include "asterisk/version.h"
-#define USE_ASTERISK_1_4
-#else
-#define USE_ASTERISK_1_2
-#endif
+

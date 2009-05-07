@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <sys/time.h>
 
+#include "asterisk.h"
 #include "asterisk/logger.h"
 
 
@@ -741,6 +742,12 @@ int decode_isup_msg(struct isup_msg *msg, ss7_variant variant, unsigned char *bu
                           0);
 
     case ISUP_UBL:
+      return param_decode(buf, len,
+                          0,
+                          0,
+                          0);
+
+    case ISUP_UBA:
       return param_decode(buf, len,
                           0,
                           0,
