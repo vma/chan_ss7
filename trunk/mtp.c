@@ -38,11 +38,7 @@
 #include <sys/ioctl.h>
 #include <sys/time.h>
 
-#ifdef DAHDI
-#include <dahdi/user.h>
-#define FAST_HDLC_NEED_TABLES
-#include <dahdi/fasthdlc.h>
-#else
+#ifdef USE_ZAPTEL
 #include "zaptel.h"
 #define FAST_HDLC_NEED_TABLES
 #include "fasthdlc.h"
@@ -53,9 +49,14 @@
 #define DAHDI_SETGAINS ZT_SETGAINS
 #define DAHDI_LAW_ALAW ZT_LAW_ALAW
 #define DAHDI_LAW_MULAW ZT_LAW_MULAW
+#else
+#include <dahdi/user.h>
+#define FAST_HDLC_NEED_TABLES
+#include <dahdi/fasthdlc.h>
 #endif
 
 #include "config.h"
+#include "mtp3io.h"
 #include "mtp.h"
 #include "transport.h"
 #include "lffifo.h"
@@ -67,10 +68,15 @@
 #define cluster_mtp_received(link, event) {}
 #define cluster_mtp_forward(req) {}
 #define cluster_receivers_alive(linkset) (0)
+#define ast_mutex_destroy pthread_mutex_destroy
+#define ast_mutex_lock pthread_mutex_lock
+#define ast_mutex_unlock pthread_mutex_unlock
 #else
+#include "asterisk.h"
 #include "asterisk/options.h"
 #include "asterisk/logger.h"
 #include "asterisk/sched.h"
+#include "asterisk/lock.h"
 #define mtp_sched_add ast_sched_add
 #define mtp_sched_del ast_sched_del
 #define mtp_sched_runq ast_sched_runq
@@ -161,7 +167,7 @@ typedef struct mtp2_state {
   int subservice;
   /* logical link name */
   char* name;
-  /* Open fd for signalling link zaptel device. */
+  /* Open fd for signalling link dahdi device. */
   int fd;
 
   /* Receive buffer. */
@@ -176,7 +182,7 @@ typedef struct mtp2_state {
   int tx_do_crc;                /* Flag used to handle writing CRC bytes */
   unsigned short tx_crc;
 
-  /* Zaptel transmit buffer. */
+  /* Dahdi transmit buffer. */
   unsigned char zap_buf[ZAP_BUF_SIZE];
   int zap_buf_full;
 
@@ -241,7 +247,6 @@ mtp2_t mtp2_state[MAX_SCHANNELS];
 #define MTP_NEXT_SEQ(x) (((x) + 1) % 128)
 
 /* Forward declaration, needed because of cyclic reference graph. */
-static mtp2_t* find_alternative_slink(mtp2_t* m);
 static void start_initial_alignment(mtp2_t *m, char* reason);
 static void abort_initial_alignment(mtp2_t *m);
 static void mtp2_cleanup(mtp2_t *m);
@@ -255,6 +260,26 @@ static void fifo_log(mtp2_t *m, int level, const char *file, int line,
      __attribute__ ((format (printf, 6, 7)));
 static void process_msu(struct mtp2_state* m, unsigned char* buf, int len);
 
+
+/* Send fifo for sending control requests to the MTP thread.
+   The fifo is lock-free (one thread may put and another get simultaneously),
+   but multiple threads doing put must be serialized with this mutex. */
+AST_MUTEX_DEFINE_STATIC(mtp_control_mutex);
+static struct lffifo *mtp_control_fifo = NULL;
+/* Queue a request to the MTP thread. */
+void mtp_enqueue_control(struct mtp_req *req) {
+  int res;
+
+  ast_mutex_lock(&mtp_control_mutex);
+  res = lffifo_put(mtp_control_fifo, (unsigned char *)req, sizeof(struct mtp_req) + req->len);
+  ast_mutex_unlock(&mtp_control_mutex);
+  if(res != 0) {
+    ast_log(LOG_WARNING, "MTP control fifo full (MTP thread hanging?).\n");
+  }
+}
+
+
+
 static inline ss7_variant variant(mtp2_t* m)
 {
   return m->link->linkset->variant;
@@ -265,7 +290,7 @@ int mtp2_slink_inservice(int ix) {
   return m->state == MTP2_INSERVICE;
 }
 
-int mtp_cmd_linkstatus(char* buff, int slinkno)
+int cmd_mtp_linkstatus(char* buff, int slinkno)
 {
   char* format = "linkset %s, link %s, schannel %d, sls %d, %s, rx: %d, tx: %d/%d, sentseq/lastack: %d/%d, total %9llu, %9llu\n";
 
@@ -287,7 +312,7 @@ int mtp_cmd_linkstatus(char* buff, int slinkno)
   return 0;
 }
 
-int mtp_cmd_data(int fd, int argc, char *argv[])
+int cmd_mtp_data(int fd, int argc, char *argv[])
 {
   unsigned char buf[MTP_EVENT_MAX_SIZE];
   int len = 0;
@@ -412,7 +437,7 @@ static void log_frame(mtp2_t *m, int out, unsigned char *buf, int len) {
   event->typ = MTP_EVENT_DUMP;
   event->dump.out = out;
   gettimeofday(&event->dump.stamp, NULL);
-  event->dump.slinkno = m->slinkno;
+  event->dump.sls = m->sls;
   if(sizeof(struct mtp_event) + len > MTP_MAX_PCK_SIZE) {
     len = MTP_MAX_PCK_SIZE - sizeof(struct mtp_event);
   }
@@ -445,9 +470,11 @@ static int t17_timeout(const void *data) {
   return 0;                     /* Do not re-schedule */
 }
 
-static void t17_stop(mtp2_t *m) {
+static void t17_stop(mtp2_t *m)
+{
+  int res;
   if(m->mtp3_t17 != -1) {
-    mtp_sched_del(mtp2_sched, m->mtp3_t17);
+    res = mtp_sched_del(mtp2_sched, m->mtp3_t17);
     m->mtp3_t17 = -1;
   }
 }
@@ -466,9 +493,12 @@ static int t1_timeout(const void *data) {
   return 0;                     /* Do not re-schedule */
 }
 
-static void t1_stop(mtp2_t *m) {
+static void t1_stop(mtp2_t *m)
+{
+  int res;
+
   if(m->mtp2_t1 != -1) {
-    mtp_sched_del(mtp2_sched, m->mtp2_t1);
+    res = mtp_sched_del(mtp2_sched, m->mtp2_t1);
     m->mtp2_t1 = -1;
   }
 }
@@ -487,9 +517,12 @@ static int t2_timeout(const void *data) {
   return 0;                     /* Do not re-schedule */
 }
 
-static void t2_stop(mtp2_t *m) {
+static void t2_stop(mtp2_t *m)
+{
+  int res;
+
   if(m->mtp2_t2 != -1) {
-    mtp_sched_del(mtp2_sched, m->mtp2_t2);
+    res = mtp_sched_del(mtp2_sched, m->mtp2_t2);
     m->mtp2_t2 = -1;
   }
 }
@@ -508,9 +541,11 @@ static int t3_timeout(const void *data) {
   return 0;                     /* Do not re-schedule */
 }
 
-static void t3_stop(mtp2_t *m) {
+static void t3_stop(mtp2_t *m)
+{
+  int res;
   if(m->mtp2_t3 != -1) {
-    mtp_sched_del(mtp2_sched, m->mtp2_t3);
+    res = mtp_sched_del(mtp2_sched, m->mtp2_t3);
     m->mtp2_t3 = -1;
   }
 }
@@ -529,9 +564,11 @@ static int t4_timeout(const void *data) {
   return 0;                     /* Do not re-schedule */
 }
 
-static void t4_stop(mtp2_t *m) {
+static void t4_stop(mtp2_t *m)
+{
+  int res;
   if(m->mtp2_t4 != -1) {
-    mtp_sched_del(mtp2_sched, m->mtp2_t4);
+    res = mtp_sched_del(mtp2_sched, m->mtp2_t4);
     m->mtp2_t4 = -1;
   }
 }
@@ -561,29 +598,6 @@ int mtp_has_inservice_schannels(struct link* link)
   return (get_inservice_schannel(link) != NULL);
 }
 
-
-static mtp2_t* find_alternative_slink(mtp2_t* m)
-{
-  struct mtp2_state* newm = NULL;
-  struct mtp2_state* alt_newm = NULL;
-  int i;
- 
-  for (i = 0; i < this_host->n_schannels; i++) {
-    if (&mtp2_state[i] == m)
-      continue;
-    if (mtp2_state[i].state != MTP2_INSERVICE)
-      continue;
-    if (m->link->linkset == mtp2_state[i].link->linkset) {
-      newm = &mtp2_state[i];
-      break;
-    }
-    if (is_combined_linkset(m->link->linkset, mtp2_state[i].link->linkset))
-      alt_newm = &mtp2_state[i];
-  }
-  if (!newm)
-    newm = alt_newm;
-  return newm;
-}
 
 /* Flush MTP transmit buffer to other link or host */
 static void mtp_changeover(mtp2_t *m) {
@@ -708,23 +722,29 @@ static void start_initial_alignment(mtp2_t *m, char* reason) {
   t2_start(m);
 }
 
-static void t7_stop(mtp2_t *m) {
+static void t7_stop(mtp2_t *m)
+{
+  int res;
+
   if(m->mtp2_t7 != -1) {
-    mtp_sched_del(mtp2_sched, m->mtp2_t7);
+    res = mtp_sched_del(mtp2_sched, m->mtp2_t7);
     m->mtp2_t7 = -1;
   }
 }
 
-static void mtp2_cleanup(mtp2_t *m) {
+static void mtp2_cleanup(mtp2_t *m)
+{
+  int res;
+
   /* Stop SLTA response timeout. */
   if(m->sltm_t1 != -1) {
-    mtp_sched_del(mtp2_sched, m->sltm_t1);
+    res = mtp_sched_del(mtp2_sched, m->sltm_t1);
     m->sltm_t1 = -1;
   }
 
   /* Stop sending SLTM. */
   if(m->sltm_t2 != -1) {
-    mtp_sched_del(mtp2_sched, m->sltm_t2);
+    res = mtp_sched_del(mtp2_sched, m->sltm_t2);
     m->sltm_t2 = -1;
   }
 
@@ -1187,8 +1207,9 @@ static void mtp2_good_frame(mtp2_t *m, unsigned char *buf, int len) {
       if (m->send_sltm) {
 	mtp3_send_sltm(m);
 	if(m->sltm_t2 != -1) {
+	  int res;
 	  fifo_log(m, LOG_DEBUG, "SLTM timer T2 not cleared, restarted (%d)\n", m->sltm_t2);
-	  mtp_sched_del(mtp2_sched, m->sltm_t2);
+	  res = mtp_sched_del(mtp2_sched, m->sltm_t2);
 	}
 
 	m->sltm_t2 = mtp_sched_add(mtp2_sched, 61000, mtp3_send_sltm, m);
@@ -1390,11 +1411,11 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
 	      subservice = 0x8;
 
       mtp3_put_label(slc, variant(m), dpc, opc, message_slta);
+      fifo_log(m, LOG_DEBUG, "Got SLTM, OPC=%d DPC=%d, sending SLTA '%s', state=%d.\n", opc, dpc, m->name, m->state);
       if(variant(m)==ITU_SS7) {
         message_slta[4] = 0x21;
         message_slta[5] = slt_pattern_len << 4;
         memcpy(&(message_slta[6]), &(buf[10]), slt_pattern_len);
-        fifo_log(m, LOG_DEBUG, "Got SLTM, sending SLTA '%s', state=%d.\n", m->name, m->state);
         mtp2_queue_msu(m, (subservice << 4) | 1, message_slta, 6 + slt_pattern_len);
       } else { /* CHINA SS7 */
         message_slta[7] = 0x21;
@@ -1407,7 +1428,8 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
 
       /* Clear the Q.707 timer T1, since the SLTA was received. */
       if(m->sltm_t1 != -1) {
-	mtp_sched_del(mtp2_sched, m->sltm_t1);
+	int res;
+	res = mtp_sched_del(mtp2_sched, m->sltm_t1);
 	m->sltm_t1 = -1;
       }
 
@@ -1539,7 +1561,7 @@ static void mtp2_fetch_zap_event(mtp2_t *m) {
   int x = 0;
   int res;
 
-  res = io_get_zaptel_event(m->fd, &x);
+  res = io_get_dahdi_event(m->fd, &x);
   fifo_log(m, LOG_NOTICE, "Got event on link '%s': %d (%d/%d).\n", m->name, x, res, errno);
 }
 
@@ -1622,10 +1644,10 @@ static void mtp2_pick_frame(mtp2_t *m)
   }
 }
 
-/* Fill in a buffer for Zaptel transmission, picking frames as necessary.
+/* Fill in a buffer for Dahdi transmission, picking frames as necessary.
    The passed buffer is of size ZAP_BUF_SIZE.
 */
-static void mtp2_fill_zaptel_buf(mtp2_t *m, unsigned char *buf) {
+static void mtp2_fill_dahdi_buf(mtp2_t *m, unsigned char *buf) {
   int i;
 
   for(i = 0; i < ZAP_BUF_SIZE; i++) {
@@ -1649,7 +1671,7 @@ static void mtp2_fill_zaptel_buf(mtp2_t *m, unsigned char *buf) {
         } while(rand() <= DROP_PACKETS_PCT/100.0*RAND_MAX);
 #endif
 	if (m->tx_len > 4)
-	  fifo_log(m, LOG_DEBUG, "Sending buffer to zaptel len=%d, on link '%s' bsn=%d, fsn=%d.\n", m->tx_len, m->name, m->tx_buffer[0]&0x7f,  m->tx_buffer[1]&0x7f);
+	  fifo_log(m, LOG_DEBUG, "Sending buffer to dahdi len=%d, on link '%s' bsn=%d, fsn=%d.\n", m->tx_len, m->name, m->tx_buffer[0]&0x7f,  m->tx_buffer[1]&0x7f);
         log_frame(m, 1, m->tx_buffer, m->tx_len);
         m->tx_sofar = 0;
         m->tx_crc = 0xffff;
@@ -1691,7 +1713,7 @@ void *mtp_thread_main(void *data) {
   ast_verbose(VERBOSE_PREFIX_3 "Starting MTP thread, pid=%d.\n", getpid());
 
   /* These counters are used to generate timestamps for raw dumps.
-     The write count is offset with one zaptel buffer size to account for
+     The write count is offset with one dahdi buffer size to account for
      the buffer-introduced write latency. This way the dump timings should
      approximately reflect the time that the last byte of the frame went
      out on the wire. */
@@ -1757,7 +1779,7 @@ void *mtp_thread_main(void *data) {
 #endif
 
     /* No need to calculate timeout with ast_sched_wait, as we will be
-       woken up every 2 msec. anyway to read/write zaptel buffers. */
+       woken up every 2 msec. anyway to read/write dahdi buffers. */
     gettimeofday(&last, NULL);
     res = poll(fds, this_host->n_schannels, 20);
 
@@ -1807,7 +1829,7 @@ void *mtp_thread_main(void *data) {
 		mtp2_fetch_zap_event(m);
 	      } else {
 		/* Some unexpected error. */
-		fifo_log(m, LOG_DEBUG, "Error reading zaptel device '%s', errno=%d: %s.\n", m->name, errno, strerror(errno));
+		fifo_log(m, LOG_DEBUG, "Error reading dahdi device '%s', errno=%d: %s.\n", m->name, errno, strerror(errno));
 		break;
 	      }
 	    } else {
@@ -1822,7 +1844,7 @@ void *mtp_thread_main(void *data) {
 	  //if(count > 2*ZAP_BUF_SIZE) fifo_log(m, LOG_NOTICE, "%d bytes read (%d buffers).\n", count, count/ZAP_BUF_SIZE);
 #ifndef MTP_OVER_UDP
 	  if(count >= NUM_ZAP_BUF*ZAP_BUF_SIZE) {
-	    fifo_log(m, LOG_NOTICE, "Full Zaptel input buffer detected, incoming "
+	    fifo_log(m, LOG_NOTICE, "Full dahdi input buffer detected, incoming "
 		     "packets may have been lost on link '%s' (count=%d.\n", m->name, count);
 	  }
 #endif
@@ -1840,7 +1862,7 @@ void *mtp_thread_main(void *data) {
 	       return.
 	    */
 	    if(!m->zap_buf_full) {
-	      mtp2_fill_zaptel_buf(m, m->zap_buf);
+	      mtp2_fill_dahdi_buf(m, m->zap_buf);
 	      m->zap_buf_full = 1;
 	    }
 	    res = write(fds[i].fd, m->zap_buf, ZAP_BUF_SIZE);
@@ -1857,7 +1879,7 @@ void *mtp_thread_main(void *data) {
 		mtp2_fetch_zap_event(m);
 	      } else {
 		/* Some unexpected error. */
-		fifo_log(m, LOG_DEBUG, "Error writing zaptel device '%s', errno=%d: %s.\n", m->name, errno, strerror(errno));
+		fifo_log(m, LOG_DEBUG, "Error writing dahdi device '%s', errno=%d: %s.\n", m->name, errno, strerror(errno));
 		break;
 	      }
 	    } else {
@@ -1874,7 +1896,7 @@ void *mtp_thread_main(void *data) {
 	  }
 	  //if(count > 2*ZAP_BUF_SIZE) fifo_log(m, LOG_NOTICE, "%d bytes written (%d buffers).\n", count, count/ZAP_BUF_SIZE);
 	  if(count >= NUM_ZAP_BUF*ZAP_BUF_SIZE) {
-	    fifo_log(m, LOG_NOTICE, "Empty Zaptel output buffer detected, outgoing "
+	    fifo_log(m, LOG_NOTICE, "Empty Dahdi output buffer detected, outgoing "
 		     "packets may have been lost on link '%s'.\n", m->name);
 	  }
 #ifdef MTP_OVER_UDP
@@ -1975,7 +1997,8 @@ void *mtp_thread_main(void *data) {
 	    break;
 	  case MTP_REQ_REGISTER_L4:
 	    break;
-
+	  case MTP_REQ_CLI:
+	    break;
 	  }
 	}
       }
@@ -2009,7 +2032,7 @@ void *mtp_thread_main(void *data) {
       }
     }
     while ((res = lffifo_get(controlbuf, fifobuf, sizeof(fifobuf))) != 0) {
-      int link_ix = 0;
+      int linkix = 0;
       if (!this_host->n_schannels)
 	continue; // No MTP signalling channels available, ignore control requests
       m = &mtp2_state[0];
@@ -2026,25 +2049,26 @@ void *mtp_thread_main(void *data) {
 	fifo_log(m, LOG_ERROR, "Got MTP_REQ_ISUP_FORWARD packet in MTP send buffer???.\n");
 	break;
       case MTP_REQ_LINK_DOWN:
-	link_ix = req->link.link_ix;
-	m = &mtp2_state[link_ix];
+	linkix = req->link.linkix;
+	m = &mtp2_state[linkix];
 	fifo_log(m, LOG_DEBUG, "Taking link down on request on link '%s'.\n", m->name);
 	m->state = MTP2_DOWN;
 	mtp2_cleanup(m);
 	l4down(m);
 	break;
       case MTP_REQ_LINK_UP:
-	link_ix = req->link.link_ix;
-	m = &mtp2_state[link_ix];
+	linkix = req->link.linkix;
+	m = &mtp2_state[linkix];
 	start_initial_alignment(m, "CLI link up");
 	break;
       case MTP_REQ_SCCP:
 	break;
       case MTP_REQ_REGISTER_L4:
 	break;
+      case MTP_REQ_CLI:
+	break;
       }
     }
-
     mtp_sched_runq(mtp2_sched);
   }
 
@@ -2053,7 +2077,7 @@ void *mtp_thread_main(void *data) {
 
 void mtp_thread_signal_stop(void) {
   /* No need for explicit thread wakeup; the mtp thread wakes up every
-     2msec anyway on the zaptel device. */
+     2msec anyway on the dahdi device. */
   stop_mtp_thread = 1;
 }
 
@@ -2180,12 +2204,12 @@ static int mtp_init_link(struct mtp2_state* m, struct link* link, int slinkno) {
   m->subservice = link->linkset->subservice;
   m->name = link->name;
   fasthdlc_precalc();
-#ifdef DAHDI
-    fasthdlc_init(&m->h_rx, FASTHDLC_MODE_64);
-    fasthdlc_init(&m->h_tx, FASTHDLC_MODE_64);
-#else
+#ifdef USE_ZAPTEL
     fasthdlc_init(&m->h_rx);
     fasthdlc_init(&m->h_tx);
+#else
+    fasthdlc_init(&m->h_rx, FASTHDLC_MODE_64);
+    fasthdlc_init(&m->h_tx, FASTHDLC_MODE_64);
 #endif
   /* Fill in the fasthdlc transmit buffer with the opening flag. */
   fasthdlc_tx_frame_nocheck(&m->h_tx);
@@ -2319,4 +2343,3 @@ int cmd_testfailover(int fd, int argc, char *argv[]) {
   testfailover = 1;
   return 0;
 }
-

@@ -33,22 +33,22 @@
 #define AST_API_MODULE
 #include <asterisk/linkedlists.h>
 #include <asterisk/time.h>
-#include <asterisk/options.h>
-#include <asterisk/utils.h>
-#include "asterisk/abstract_jb.h"
 
+#define ast_config confstate
+#include "astversion.h"
 #include "aststubs.h"
+#include "configparser.h"
 
 int option_debug;
 struct ast_cli_entry;
 
 int option_verbose;
 int option_debug;
-struct ast_flags ast_options;
 
 char ast_config_AST_CONFIG_DIR[PATH_MAX];
 
 
+#undef localtime_r
 #undef pthread_mutex_init
 #undef pthread_mutex_lock
 #undef pthread_mutex_unlock
@@ -67,8 +67,7 @@ char ast_config_AST_CONFIG_DIR[PATH_MAX];
 int ast_safe_system(const char *s);
 void ast_register_file_version(const char *file, const char *version);
 void ast_unregister_file_version(const char *file);
-void ast_cli_register_multiple(struct ast_cli_entry *e, int len);
-void ast_cli(int fd, char *fmt, ...);
+void ast_cli(int fd, const char *fmt, ...);
 
 int ast_safe_system(const char *s)
 {
@@ -83,18 +82,41 @@ void ast_unregister_file_version(const char *file)
 {
 }
 
+#ifdef USE_ASTERISK_1_6
+int ast_cli_register_multiple(struct ast_cli_entry *e, int len)
+{
+  return 0;
+}
+int ast_cli_unregister_multiple(struct ast_cli_entry *e, int len)
+{
+  return 0;
+}
+#else
 void ast_cli_register_multiple(struct ast_cli_entry *e, int len)
 {
 }
-
-void ast_cli(int fd, char *fmt, ...)
+void ast_cli_unregister_multiple(struct ast_cli_entry *e, int len)
 {
+}
+#endif
+
+void ast_cli(int fd, const char *fmt, ...)
+{
+  char buff[10240];
+  va_list ap;
+
+  va_start(ap, fmt);
+  vsprintf(buff, fmt, ap);
+  write(fd, buff, strlen(buff));
 }
 
 void ast_log(int level, const char *file, int line, const char *function, const char *fmt, ...)
 {
   va_list ap;
   char *l;
+  time_t now;
+  struct tm tm;
+  char tbuff[64];
   char buff[1024];
 
   if ((level == __LOG_DEBUG) && !option_debug)
@@ -107,7 +129,10 @@ void ast_log(int level, const char *file, int line, const char *function, const 
   case __LOG_ERROR: l= "ERROR"; break;
   default: l = "unknown";
   }
-  sprintf(buff, "[%s] %s:%d %s %s", l, file, line, function, fmt);
+  time(&now);
+  localtime_r(&now, &tm);
+  strftime(tbuff, sizeof(tbuff), "%b %d %H:%M:%S", &tm);
+  sprintf(buff, "%s [%s] %s:%d %s %s", tbuff, l, file, line, function, fmt);
   va_start(ap, fmt);
   vprintf(buff, ap);
   fflush(stdout);
@@ -136,6 +161,13 @@ void ast_verbose(const char *fmt, ...)
 } while (0)
 #endif
 
+#if defined(USE_ASTERISK_1_2) || defined(USE_ASTERISK_1_4)
+#define AST_LIST_INSERT_BEFORE_CURRENT_C(head,elm,field) AST_LIST_INSERT_BEFORE_CURRENT(head,elm,field)
+#define AST_LIST_REMOVE_CURRENT_C(head,field) AST_LIST_REMOVE_CURRENT(head,field)
+#else
+#define AST_LIST_INSERT_BEFORE_CURRENT_C(head,elm,field) AST_LIST_INSERT_BEFORE_CURRENT(elm,field)
+#define AST_LIST_REMOVE_CURRENT_C(head,field) AST_LIST_REMOVE_CURRENT(field)
+#endif
 struct sched {
 	AST_LIST_ENTRY(sched) list;
 	int id;                       /*!< ID number of event */
@@ -284,7 +316,7 @@ static void schedule(struct sched_context *con, struct sched *s)
 	
 	AST_LIST_TRAVERSE_SAFE_BEGIN(&con->schedq, cur, list) {
 		if (ast_tvcmp(s->when, cur->when) == -1) {
-			AST_LIST_INSERT_BEFORE_CURRENT(&con->schedq, s, list);
+			AST_LIST_INSERT_BEFORE_CURRENT_C(&con->schedq, s, list);
 			break;
 		}
 	}
@@ -357,7 +389,7 @@ int mtp_sched_del(struct sched_context *con, int id)
 	ast_mutex_lock(&con->lock);
 	AST_LIST_TRAVERSE_SAFE_BEGIN(&con->schedq, s, list) {
 		if (s->id == id) {
-			AST_LIST_REMOVE_CURRENT(&con->schedq, list);
+			AST_LIST_REMOVE_CURRENT_C(&con->schedq, list);
 			con->schedcnt--;
 			sched_release(con, s);
 			break;
@@ -442,7 +474,69 @@ int mtp_sched_runq(struct sched_context *con)
 }
 
 
-int ast_jb_read_conf(struct ast_jb_conf *conf, char *varname, char *value)
+int ast_jb_read_conf(struct ast_jb_conf *conf, const char *varname, const char *value)
 {
   return 0;
+}
+
+
+#if defined(USE_ASTERISK_1_2) || defined(USE_ASTERISK_1_4)
+struct ast_config* ast_config_load(const char* filename)
+#else
+struct ast_config* ast_config_load(const char* filename, struct ast_flags flags)
+#endif
+{
+  struct confstate* c;
+  int res;
+  res = confinitparser(&c, ast_config_AST_CONFIG_DIR, filename);
+  if (res < 0)
+    return NULL;
+  return c;
+}
+
+void ast_config_destroy(struct ast_config* cfg)
+{
+  confend(cfg);
+}
+
+const char* ast_category_browse(struct ast_config* cfg, const char* cat)
+{
+  return confnextsection(cfg);
+}
+
+struct ast_variable* ast_variable_browse(const struct ast_config* cfg, const char* cat)
+{
+  const char* key;
+  const char* value;
+  struct ast_variable* var;
+  struct ast_variable* first = NULL;
+  struct ast_variable* prev = NULL;
+  while ((key = confnextkey(cfg)) != 0) {
+    var = malloc(sizeof(*var));
+    var->name = strdup(key);
+    var->value = strdup(confgetvalue(cfg));
+    if (prev)
+      prev->next = var;
+    else
+      first = var;
+    prev = var;
+  }
+  if (prev)
+    prev->next = NULL;
+  return first;
+}
+
+
+void ast_join(char* buf, int size, char* args[])
+{
+  int f = 1;
+  *buf = 0;
+  while (*args) {
+    int l = strlen(*args);
+    if (l < size) {
+      if (!f++)
+	strcat(buf, " ");
+      strcat(buf, *args++);
+    }
+  }
 }

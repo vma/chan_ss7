@@ -53,6 +53,8 @@
 #include "l4isup.h"
 #include "cluster.h"
 #include "mtp3io.h"
+#include "cli.h"
+#include "dump.h"
 
 #ifdef USE_ASTERISK_1_2
 #define AST_MODULE_LOAD_SUCCESS  0
@@ -60,11 +62,8 @@
 #define AST_MODULE_LOAD_FAILURE -1
 #endif
 
-/* Send fifo for sending control requests to the MTP thread.
-   The fifo is lock-free (one thread may put and another get simultaneously),
-   but multiple threads doing put must be serialized with this mutex. */
-AST_MUTEX_DEFINE_STATIC(mtp_control_mutex);
-static struct lffifo *mtp_control_fifo = NULL;
+static const char desc[] = "SS7 Protocol Support";
+static const char config[] = "ss7.conf";
 
 /* This is the MTP2/MTP3 thread, which runs at high real-time priority
    and is careful not to wait for locks in order not to loose MTP
@@ -79,223 +78,6 @@ static int monitor_running = 0;
 
 
 
-/* State for dumps. */
-AST_MUTEX_DEFINE_STATIC(dump_mutex);
-static FILE *dump_in_fh = NULL;
-static FILE *dump_out_fh = NULL;
-static int dump_do_fisu, dump_do_lssu, dump_do_msu;
-
-
-static const char desc[] = "SS7 Protocol Support";
-static const char config[] = "ss7.conf";
-
-
-
-
-static int cmd_version(int fd, int argc, char *argv[]);
-static int cmd_dump_status(int fd, int argc, char *argv[]);
-static int cmd_dump_stop(int fd, int argc, char *argv[]);
-static int cmd_dump_start(int fd, int argc, char *argv[]);
-static char *complete_dump_stop(const char *line, const char *word, int pos, int state);
-static char *complete_dump_start(const char *line, const char *word, int pos, int state);
-static int cmd_link_up(int fd, int argc, char *argv[]);
-static int cmd_link_down(int fd, int argc, char *argv[]);
-static int cmd_link_status(int fd, int argc, char *argv[]);
-static int cmd_ss7_status(int fd, int argc, char *argv[]);
-
-static struct ast_cli_entry my_clis[] = {
-  { {"ss7", "version", NULL}, cmd_version,
-    "Show current version of chan_ss7",
-    "Usage: ss7 version\n",
-    NULL
-  },
-
-  { { "ss7", "dump", "start", NULL}, cmd_dump_start,
-    "Start MTP2 dump to a file",
-    "Usage: ss7 dump start <file> [in|out|both] [fisu] [lssu] [msu]\n"
-    "       Start mtp2 dump to file. Either incoming, outgoing, or both(default).\n"
-    "       Optinally specify which of fisu, lssu, and msu should be dumped.\n"
-    "       The output is in PCAP format (can be read by wireshark).\n",
-    complete_dump_start
-  },
-
-  { {"ss7", "dump", "stop", NULL}, cmd_dump_stop,
-    "Stop a running MTP2 dump",
-    "Usage: ss7 dump stop [in|out|both]\n"
-    "       Stop mtp2 dump started with \"ss7 start dump\". Either incoming,\n"
-    "       outgoing, or both(default).\n",
-    complete_dump_stop
-  },
-
-  { {"ss7", "dump", "status", NULL}, cmd_dump_status,
-    "Stop what dumps are running",
-    "Usage: ss7 dump status\n",
-    NULL
-  },
-
-#ifndef MODULETEST
-  { {"ss7", "link", "down", NULL}, cmd_link_down,
-    "Stop the MTP2 link(s) [logical-link-no]...",
-    "Usage: ss7 link down [logical-link-no]\n"
-    "       Take the link(s) down; it will be down until started explicitly with\n"
-    "       'ss7 link up'.\n"
-    "       Until then, it will continuously transmit LSSU 'OS' (out-of-service)\n"
-    "       frames.\n"
-    "       If no logical-link-no argument is given, all links are affected.\n",
-    NULL
-  },
-
-  { {"ss7", "link", "up", NULL}, cmd_link_up,
-    "Start the MTP2 link(s) [logical-link-no]...",
-    "Usage: ss7 link up\n"
-    "       Attempt to take the MTP2 link(s) up with the initial alignment procedure.\n"
-    "       If no logical-link-no argument is given, all links are affected.\n",
-    NULL
-  },
-
-  { {"ss7", "link", "status", NULL}, cmd_link_status,
-    "Show status of the MTP2 links",
-    "Usage: ss7 link status\n"
-    "       Show the status of the MTP2 links.\n",
-    NULL
-  },
-#endif
-
-  { {"ss7", "block", NULL}, cmd_block,
-    "Set circuits in local maintenance blocked mode",
-    "Usage: ss7 block <first> <count> [<linksetname>]\n"
-    "       Set <count> lines into local maintenance blocked mode, starting at circuit <first>on linkset <linksetname>\n",
-    NULL
-  },
-
-  { {"ss7", "unblock", NULL}, cmd_unblock,
-    "Remove local maintenance blocked mode from circuits",
-    "Usage: ss7 unblock <first> <count> [<linksetname>]\n"
-    "       Remove <count> lines from local maintenance blocked mode, starting at circuit <first> on linkset <linksetname>.\n",
-    NULL
-  },
-
-  { {"ss7", "linestat", NULL}, cmd_linestat,
-    "Show line states",
-    "Usage: ss7 linestat\n"
-    "       Show status for all circuits.\n",
-    NULL
-  },
-
-  { {"ss7", "show", "channels", NULL}, cmd_linestat,
-    "Show channel states",
-    "Usage: ss7 show channels\n"
-    "       Show status for all channels.\n",
-    NULL
-  },
-
-  { {"ss7", "cluster", "start", NULL}, cmd_cluster_start,
-    "Start cluster",
-    "Usage: ss7 cluster start\n"
-    "       Start the cluster.\n",
-    NULL
-  },
-
-  { {"ss7", "cluster", "stop", NULL}, cmd_cluster_stop,
-    "Stop cluster",
-    "Usage: ss7 cluster stop\n"
-    "       Stop the cluster.\n",
-    NULL
-  },
-
-  { {"ss7", "cluster", "status", NULL}, cmd_cluster_status,
-    "Show status of the cluster",
-    "Usage: ss7 cluster status\n"
-    "       Show the status of the cluster.\n",
-    NULL
-  },
-
-  { {"ss7", "reset", NULL}, cmd_reset,
-    "Reset all circuits",
-    "Usage: ss7 reset\n"
-    "       Reset all circuits.\n",
-    NULL
-  },
-
-  { { "ss7", "mtp", "data", NULL}, mtp_cmd_data,
-    "Copy hex encoded string to MTP",
-    "Usage: ss7 mtp data string\n"
-    "       Copy hex encoded string to MTP",
-    NULL,
-  },
-
-  { { "ss7", "status", NULL}, cmd_ss7_status,
-    "Show status of ss7",
-    "Usage: ss7 status\n"
-    "       Show status/statistics of ss7",
-    NULL,
-  },
-
-#ifdef MODULETEST
-  { {"ss7", "testfailover", NULL}, cmd_testfailover,
-    "Test the failover mechanism",
-    "Usage: ss7 testfailover"
-    "       Test the failover mechanism.\n",
-    NULL
-  },
-  { {"ss7", "moduletest", NULL}, cmd_moduletest,
-    "Run a moduletest",
-    "Usage: ss7 moduletest <no>"
-    "       Run moduletest <no>.\n",
-    NULL
-  },
-#endif
-};
-
-static void dump_pcap(FILE *f, struct mtp_event *event)
-{
-  unsigned int sec  = event->dump.stamp.tv_sec;
-  unsigned int usec  = event->dump.stamp.tv_usec - (event->dump.stamp.tv_usec % 1000) +
-    event->dump.slinkno*2 + /* encode link number in usecs */
-    event->dump.out /* encode direction in/out */;
-  int res;
-
-  res = fwrite(&sec, sizeof(sec), 1, f);
-  res = fwrite(&usec, sizeof(usec), 1, f);
-  res = fwrite(&event->len, sizeof(event->len), 1, f); /* number of bytes of packet in file */
-  res = fwrite(&event->len, sizeof(event->len), 1, f); /* actual length of packet */
-  res = fwrite(event->buf, 1, event->len, f);
-  fflush(f);
-}
-
-static void init_pcap_file(FILE *f)
-{
-  unsigned int magic = 0xa1b2c3d4;  /* text2pcap does this */
-  unsigned short version_major = 2;
-  unsigned short version_minor = 4;
-  unsigned int thiszone = 0;
-  unsigned int sigfigs = 0;
-  unsigned int snaplen = 102400;
-  unsigned int linktype = 140;
-  int res;
-
-  res = fwrite(&magic, sizeof(magic), 1, f);
-  res = fwrite(&version_major, sizeof(version_major), 1, f);
-  res = fwrite(&version_minor, sizeof(version_minor), 1, f);
-  res = fwrite(&thiszone, sizeof(thiszone), 1, f);
-  res = fwrite(&sigfigs, sizeof(sigfigs), 1, f);
-  res = fwrite(&snaplen, sizeof(snaplen), 1, f);
-  res = fwrite(&linktype, sizeof(linktype), 1, f);
-}
-
-/* Queue a request to the MTP thread. */
-static void mtp_enqueue_control(struct mtp_req *req) {
-  int res;
-
-  ast_mutex_lock(&mtp_control_mutex);
-  res = lffifo_put(mtp_control_fifo, (unsigned char *)req, sizeof(struct mtp_req) + req->len);
-  ast_mutex_unlock(&mtp_control_mutex);
-  if(res != 0) {
-    ast_log(LOG_WARNING, "MTP control fifo full (MTP thread hanging?).\n");
-  }
-}
-
-
 static int start_mtp_thread(void)
 {
   return start_thread(&mtp_thread, mtp_thread_main, &mtp_thread_running, 15);
@@ -307,273 +89,8 @@ static void stop_mtp_thread(void)
     stop_thread(&mtp_thread, &mtp_thread_running);
 }
 
-static int cmd_link_up_down(int fd, int argc, char *argv[], int updown) {
-  static unsigned char buf[sizeof(struct mtp_req)];
-  struct mtp_req *req = (struct mtp_req *)buf;
-  int i;
-
-  req->typ = updown;
-  req->len = sizeof(req->link);
-  if(argc > 3) {
-    for (i = 3; i < argc; i++) {
-      int link_ix = atoi(argv[i]);
-      ast_log(LOG_DEBUG, "MTP control link %s %d\n", updown == MTP_REQ_LINK_UP ? "up" : "down", link_ix);
-      if (link_ix >= this_host->n_schannels) {
-	ast_log(LOG_ERROR, "Link index out of range %d, max %d.\n", link_ix, this_host->n_schannels);
-	return RESULT_FAILURE;
-      }
-      req->link.link_ix = link_ix;
-      mtp_enqueue_control(req);
-    }
-  }
-  else {
-    for (i=0; i < this_host->n_schannels; i++) {
-      ast_log(LOG_DEBUG, "MTP control link %s %d\n", updown == MTP_REQ_LINK_UP ? "up" : "down", i);
-      req->link.link_ix = i;
-      mtp_enqueue_control(req);
-    }
-  }
-  return RESULT_SUCCESS;
-}
-
-
-static int cmd_link_down(int fd, int argc, char *argv[]) {
-  return cmd_link_up_down(fd, argc, argv, MTP_REQ_LINK_DOWN);
-}
-
-
-static int cmd_link_up(int fd, int argc, char *argv[]) {
-  return cmd_link_up_down(fd, argc, argv, MTP_REQ_LINK_UP);
-}
-
-
-static int cmd_link_status(int fd, int argc, char *argv[]) {
-  char buff[256];
-  int i;
-
-  for (i = 0; i < this_host->n_schannels; i++) {
-    if (mtp_cmd_linkstatus(buff, i) == 0)
-      ast_cli(fd, buff);
-  }
-  return RESULT_SUCCESS;
-}
-
-
-static char *complete_generic(const char *word, int state, char **options, int entries) {
-  int which = 0;
-  int i;
-
-  for(i = 0; i < entries; i++) {
-    if(0 == strncasecmp(word, options[i], strlen(word))) {
-      if(++which > state) {
-        return strdup(options[i]);
-      }
-    }
-  }
-  return NULL;
-}
-
-static char *dir_options[] = { "in", "out", "both", };
-static char *filter_options[] = { "fisu", "lssu", "msu", };
-
-static char *complete_dump_start(const char *line, const char *word, int pos, int state)
-{
-  if(pos == 4) {
-    return complete_generic(word, state, dir_options,
-                            sizeof(dir_options)/sizeof(dir_options[0]));
-  } else if(pos > 4) {
-    return complete_generic(word, state, filter_options,
-                            sizeof(filter_options)/sizeof(filter_options[0]));
-  } else {
-    /* We won't attempt to complete file names, that's not worth it. */
-    return NULL;
-  }
-}
-
-static char *complete_dump_stop(const char *line, const char *word, int pos, int state)
-{
-  if(pos == 3) {
-    return complete_generic(word, state, dir_options,
-                            sizeof(dir_options)/sizeof(dir_options[0]));
-  } else {
-    return NULL;
-  }
-}
-
-static int cmd_dump_start(int fd, int argc, char *argv[]) {
-  int in, out;
-  int i;
-  int fisu,lssu,msu;
-  FILE *fh;
-
-  if(argc < 4) {
-    return RESULT_SHOWUSAGE;
-  }
-
-  if(argc == 4) {
-    in = 1;
-    out = 1;
-  } else {
-    if(0 == strcasecmp(argv[4], "in")) {
-      in = 1;
-      out = 0;
-    } else if(0 == strcasecmp(argv[4], "out")) {
-      in = 0;
-      out = 1;
-    } else if(0 == strcasecmp(argv[4], "both")) {
-      in = 1;
-      out = 1;
-    } else {
-      return RESULT_SHOWUSAGE;
-    }
-  }
-
-  ast_mutex_lock(&dump_mutex);
-  if((in && dump_in_fh != NULL) || (out && dump_out_fh != NULL)) {
-    ast_cli(fd, "Dump already running, must be stopped (with 'ss7 stop dump') "
-            "before new can be started.\n");
-    ast_mutex_unlock(&dump_mutex);
-    return RESULT_FAILURE;
-  }
-
-  if(argc <= 5) {
-    fisu = 0;
-    lssu = 0;
-    msu = 1;
-  } else {
-    fisu = 0;
-    lssu = 0;
-    msu = 0;
-    for(i = 5; i < argc; i++) {
-      if(0 == strcasecmp(argv[i], "fisu")) {
-        fisu = 1;
-      } else if(0 == strcasecmp(argv[i], "lssu")) {
-        lssu = 1;
-      } else if(0 == strcasecmp(argv[i], "msu")) {
-        msu = 1;
-      } else {
-        ast_mutex_unlock(&dump_mutex);
-        return RESULT_SHOWUSAGE;
-      }
-    }
-  }
-
-  fh = fopen(argv[3], "w");
-  if(fh == NULL) {
-    ast_cli(fd, "Error opening file '%s': %s.\n", argv[3], strerror(errno));
-    ast_mutex_unlock(&dump_mutex);
-    return RESULT_FAILURE;
-  }
-
-  if(in) {
-    dump_in_fh = fh;
-  }
-  if(out) {
-    dump_out_fh = fh;
-  }
-  dump_do_fisu = fisu;
-  dump_do_lssu = lssu;
-  dump_do_msu = msu;
-  init_pcap_file(fh);
-
-  ast_mutex_unlock(&dump_mutex);
-  return RESULT_SUCCESS;
-}
-
-static int cmd_dump_stop(int fd, int argc, char *argv[]) {
-  int in, out;
-
-  if(argc == 3) {
-    in = 1;
-    out = 1;
-  } else if(argc == 4) {
-    if(0 == strcasecmp(argv[3], "in")) {
-      in = 1;
-      out = 0;
-    } else if(0 == strcasecmp(argv[3], "out")) {
-      in = 0;
-      out = 1;
-    } else if(0 == strcasecmp(argv[3], "both")) {
-      in = 1;
-      out = 1;
-    } else {
-      return RESULT_SHOWUSAGE;
-    }
-  } else {
-    return RESULT_SHOWUSAGE;
-  }
-
-  ast_mutex_lock(&dump_mutex);
-
-  if((in && !out && dump_in_fh == NULL) ||
-     (out && !in && dump_out_fh == NULL) ||
-     (in && out && dump_in_fh == NULL && dump_out_fh == NULL)) {
-    ast_cli(fd, "No dump running.\n");
-    ast_mutex_unlock(&dump_mutex);
-    return RESULT_SUCCESS;
-  }
-
-  if(in && dump_in_fh != NULL) {
-    if(dump_out_fh == dump_in_fh) {
-      /* Avoid closing it twice. */
-      dump_out_fh = NULL;
-    }
-    fclose(dump_in_fh);
-    dump_in_fh = NULL;
-  }
-  if(out && dump_out_fh != NULL) {
-    fclose(dump_out_fh);
-    dump_out_fh = NULL;
-  }
-
-  ast_mutex_unlock(&dump_mutex);
-  return RESULT_SUCCESS;
-}
-
-static int cmd_dump_status(int fd, int argc, char *argv[]) {
-  ast_mutex_lock(&dump_mutex);
-
-  /* ToDo: This doesn't seem to work, the output is getting lost somehow.
-     Not sure why, but could be related to ast_carefulwrite() called in
-     ast_cli(). */
-  ast_cli(fd, "Yuck! what is going on here?!?\n");
-  if(dump_in_fh != NULL) {
-    ast_cli(fd, "Dump of incoming frames is running.\n");
-  }
-  if(dump_out_fh != NULL) {
-    ast_cli(fd, "Dump of outgoing frames is running.\n");
-  }
-  if(dump_in_fh != NULL || dump_out_fh != NULL) {
-    ast_cli(fd, "Filter:%s%s%s.\n",
-            (dump_do_fisu ? " fisu" : ""),
-            (dump_do_lssu ? " lssu" : ""),
-            (dump_do_msu ? " msu" : ""));
-  }
-
-  ast_mutex_unlock(&dump_mutex);
-  return RESULT_SUCCESS;
-}
-
-
-static int cmd_version(int fd, int argc, char *argv[])
-{
-  ast_cli(fd, "chan_ss7 version %s\n", CHAN_SS7_VERSION);
-
-  return RESULT_SUCCESS;
-}
-
-
-static int cmd_ss7_status(int fd, int argc, char *argv[])
-{
-  cmd_linkset_status(fd, argc, argv);
-  return RESULT_SUCCESS;
-}
-
-
 static void process_event(struct mtp_event* event)
 {
-  FILE *dump_fh;
-
   switch(event->typ) {
   case MTP_EVENT_ISUP:
     l4isup_event(event);
@@ -592,22 +109,7 @@ static void process_event(struct mtp_event* event)
     break;
 
   case MTP_EVENT_DUMP:
-    ast_mutex_lock(&dump_mutex);
-
-    if(event->dump.out) {
-      dump_fh = dump_out_fh;
-    } else {
-      dump_fh = dump_in_fh;
-    }
-    if(dump_fh != NULL) {
-      if(event->len < 3 ||
-	 ( !(event->buf[2] == 0 && !dump_do_fisu) &&
-	   !((event->buf[2] == 1 || event->buf[2] == 2) && !dump_do_lssu) &&
-	   !(event->buf[2] > 2 && !dump_do_msu)))
-	dump_pcap(dump_fh, event);
-    }
-
-    ast_mutex_unlock(&dump_mutex);
+    dump_event(event);
     break;
 
   case MTP_EVENT_STATUS:
@@ -644,7 +146,7 @@ static void process_event(struct mtp_event* event)
    non-realtime priority. It also handles timers for ISUP etc.
 */
 static void *monitor_main(void *data) {
-  int res, nres;
+  int res = 0, nres;
   struct pollfd fds[(MAX_LINKS+1)];
   int i, n_fds = 0;
   int rebuild_fds = 1;
@@ -679,6 +181,8 @@ static void *monitor_main(void *data) {
 		link->mtp3fd = mtp3_connect_socket(link->mtp3server_host, link->mtp3server_port);
 		if (link->mtp3fd != -1)
 		  res = mtp3_register_isup(link->mtp3fd, link->linkix);
+		else
+		  poll(NULL, 0, 5000);
 		if ((link->mtp3fd == -1) || (res == -1))
 		  rebuild_fds += 2;
 	      }
@@ -859,8 +363,6 @@ static int ss7_load_module(void)
     ast_log(LOG_ERROR, "Unable to start MTP thread.\n");
     return AST_MODULE_LOAD_FAILURE;
   }
-  mtp_control_fifo = mtp_get_control_fifo();
-
   monitor_running = 1;          /* Otherwise there is a race, and
                                    monitor may exit immediately */
   if(ast_pthread_create(&monitor_thread, NULL, monitor_main, NULL) < 0) {
@@ -870,7 +372,7 @@ static int ss7_load_module(void)
   }
 
 
-  ast_cli_register_multiple(my_clis, sizeof(my_clis)/ sizeof(my_clis[0]));
+  cli_register();
 
   ast_verbose(VERBOSE_PREFIX_3 "SS7 channel loaded successfully.\n");
   return AST_MODULE_LOAD_SUCCESS;
@@ -879,27 +381,14 @@ static int ss7_load_module(void)
 
 static int ss7_unload_module(void)
 {
-  ast_cli_unregister_multiple(my_clis, sizeof(my_clis)/ sizeof(my_clis[0]));
+  cli_unregister();
 
 #ifdef SCCP
   sccp_cleanup();
 #endif
   isup_cleanup();
 
-  ast_mutex_lock(&dump_mutex);
-  if(dump_in_fh != NULL) {
-    if(dump_in_fh == dump_out_fh) {
-      dump_out_fh = NULL;
-    }
-    fclose(dump_in_fh);
-    dump_in_fh = NULL;
-  }
-  if(dump_out_fh != NULL) {
-    fclose(dump_out_fh);
-    dump_out_fh = NULL;
-  }
-  ast_mutex_unlock(&dump_mutex);
-
+  cleanup_dump(0, 1, 1);
   if(monitor_running) {
     stop_monitor();
   }
@@ -935,7 +424,6 @@ char *key() {
   return ASTERISK_GPL_KEY;
 }
 #else
-#define AST_MODULE "chan_ss7"
 AST_MODULE_INFO(ASTERISK_GPL_KEY, AST_MODFLAG_DEFAULT, desc,
                 .load = ss7_load_module,
                 .unload = ss7_unload_module,

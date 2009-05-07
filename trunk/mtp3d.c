@@ -25,18 +25,19 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <string.h>
+#include <sys/param.h>
 #include <sys/poll.h>
 #include <sys/errno.h>
 #include <sys/socket.h>
 #include <fcntl.h>
 #include <signal.h>
 #include <pthread.h>
-
-#include <asterisk.h>
-#include <asterisk/strings.h>
-#include <asterisk/utils.h>
-
-#undef pthread_create
+#include <sys/errno.h>
+#include <sys/socket.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include "config.h"
 #include "lffifo.h"
@@ -46,8 +47,8 @@
 #include "utils.h"
 #include "aststubs.h"
 #include "mtp3io.h"
-
-#undef inet_ntoa
+#include "cli.h"
+#include "dump.h"
 
 
 static int do_pid = 0;
@@ -78,60 +79,12 @@ void l4isup_link_status_change(struct link* link, int up);
 
 
 
-static struct lffifo *mtp_control_fifo = NULL;
-/* This is the MTP2/MTP3 thread, which runs at high real-time priority
-   and is careful not to wait for locks in order not to loose MTP
-   frames. */
-static pthread_t mtp_thread = AST_PTHREADT_NULL;
+static pthread_t mtp_thread = 0;
 /* This is the monitor thread which mainly handles scheduling/timeouts. */
 static int mtp_thread_running = 0;
 /* This is the monitor thread which mainly handles scheduling/timeouts. */
-static pthread_t monitor_thread = AST_PTHREADT_NULL;
+static pthread_t monitor_thread = 0;
 static int monitor_running = 0;
-
-/* State for raw dumps. */
-AST_MUTEX_DEFINE_STATIC(dump_mutex);
-static FILE *dump_in_fh = NULL;
-static FILE *dump_out_fh = NULL;
-static int dump_do_fisu, dump_do_lssu, dump_do_msu;
-
-static void dump_pcap(FILE *f, struct mtp_event *event)
-{
-  unsigned int sec  = event->dump.stamp.tv_sec;
-  unsigned int usec  = event->dump.stamp.tv_usec - (event->dump.stamp.tv_usec % 1000) +
-    event->dump.slinkno*2 + /* encode link number in usecs */
-    event->dump.out /* encode direction in/out */;
-  int res;
-
-  res = fwrite(&sec, sizeof(sec), 1, f);
-  res = fwrite(&usec, sizeof(usec), 1, f);
-  res = fwrite(&event->len, sizeof(event->len), 1, f);
-  res = fwrite(&event->len, sizeof(event->len), 1, f);
-  res = fwrite(event->buf, 1, event->len, f);
-  fflush(f);
-}
-
-static void init_pcap_file(FILE *f)
-{
-  unsigned int magic = 0xa1b2c3d4;  /* text2pcap does this */
-  unsigned short version_major = 2;
-  unsigned short version_minor = 4;
-  unsigned int thiszone = 0;
-  unsigned int sigfigs = 0;
-  unsigned int snaplen = 102400;
-  unsigned int linktype = 140;
-  int res;
-
-  res = fwrite(&magic, sizeof(magic), 1, f);
-  res = fwrite(&version_major, sizeof(version_major), 1, f);
-  res = fwrite(&version_minor, sizeof(version_minor), 1, f);
-  res = fwrite(&thiszone, sizeof(thiszone), 1, f);
-  res = fwrite(&sigfigs, sizeof(sigfigs), 1, f);
-  res = fwrite(&snaplen, sizeof(snaplen), 1, f);
-  res = fwrite(&linktype, sizeof(linktype), 1, f);
-}
-
-
 
 static int start_mtp_thread(void)
 {
@@ -161,6 +114,10 @@ static void process_event(struct mtp_event* event)
 	    event->log.function, "%s", event->buf);
     break;
 
+  case MTP_EVENT_DUMP:
+    dump_event(event);
+    break;
+
   case MTP_EVENT_STATUS:
     {
       struct link* link = event->status.link;
@@ -185,27 +142,6 @@ static void process_event(struct mtp_event* event)
 	ast_log(LOG_NOTICE, "Unknown event type STATUS (%d), "
 		"not processed.\n", event->status.link_state);
       }
-    }
-    break;
-  case MTP_EVENT_DUMP:
-    {
-      FILE *dump_fh;
-
-      ast_mutex_lock(&dump_mutex);
-
-      if(event->dump.out) {
-	dump_fh = dump_out_fh;
-      } else {
-	dump_fh = dump_in_fh;
-      }
-      if(dump_fh != NULL) {
-	if(event->len < 3 ||
-	   ( !(event->buf[2] == 0 && !dump_do_fisu) &&
-	     !((event->buf[2] == 1 || event->buf[2] == 2) && !dump_do_lssu) &&
-	     !(event->buf[2] > 2 && !dump_do_msu)))
-	  dump_pcap(dump_fh, event);
-      }
-      ast_mutex_unlock(&dump_mutex);
     }
     break;
   default:
@@ -649,6 +585,9 @@ static void mtp_mainloop(void)
 	      }
 	    }
 	    break;
+	  case MTP_REQ_CLI:
+	    cli_handle(fds[i].fd, (char*) req->buf);
+	    break;
 	  default:
 	    ast_log(LOG_NOTICE, "Unknown req type %d.\n", req->typ);
 	    break;
@@ -661,20 +600,7 @@ static void mtp_mainloop(void)
 
 static void setup_dump(const char* fn)
 {
-  FILE *fh;
-
-  fh = fopen(fn, "w");
-  if(fh == NULL) {
-    fprintf(stderr, "Error opening file '%s': %s.\n", fn, strerror(errno));
-    return;
-  }
-
-  dump_in_fh = fh;
-  dump_out_fh = fh;
-  dump_do_fisu = 0;
-  dump_do_lssu = 0;
-  dump_do_msu = 1;
-  init_pcap_file(fh);
+  init_dump(0, fn, 1, 1, 0, 0, 1);
 }
 
 static void usage(void)
@@ -699,6 +625,39 @@ static int setup_daemon(void)
   signal(SIGTERM, sigterm);
   fprintf(pidfile, "%d\n", getpid());
   fclose(pidfile);
+  return 0;
+}
+
+int cmd_linkset_status(int fd, int argc, char *argv[])
+{
+  return 0;
+}
+int cmd_block(int fd, int argc, char *argv[])
+{
+  return 0;
+}
+int cmd_unblock(int fd, int argc, char *argv[])
+{
+  return 0;
+}
+int cmd_linestat(int fd, int argc, char *argv[])
+{
+  return 0;
+}
+int cmd_cluster_start(int fd, int argc, char *argv[])
+{
+  return 0;
+}
+int cmd_cluster_stop(int fd, int argc, char *argv[])
+{
+  return 0;
+}
+int cmd_cluster_status(int fd, int argc, char *argv[])
+{
+  return 0;
+}
+int cmd_reset(int fd, int argc, char *argv[])
+{
   return 0;
 }
 
@@ -745,8 +704,6 @@ int main(int argc, char* argv[])
     ast_log(LOG_ERROR, "Unable to start MTP thread.\n");
     return -1;
   }
-  mtp_control_fifo = mtp_get_control_fifo();
-
   monitor_running = 1;          /* Otherwise there is a race, and
                                    monitor may exit immediately */
   if(pthread_create(&monitor_thread, NULL, monitor_main, NULL) < 0) {

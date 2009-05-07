@@ -57,6 +57,7 @@
 #include "config.h"
 #include "lffifo.h"
 #include "utils.h"
+#include "mtp3io.h"
 #include "mtp.h"
 #include "cluster.h"
 
