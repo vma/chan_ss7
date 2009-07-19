@@ -313,7 +313,7 @@ static int cmd_link_status(int fd, int argc, char *argv[]) {
 
   for (i = 0; i < this_host->n_schannels; i++) {
     if (cmd_mtp_linkstatus(buff, i) == 0)
-      ast_cli(fd, buff);
+      ast_cli(fd, "%s", buff);
   }
   return RESULT_SUCCESS;
 }
@@ -478,7 +478,7 @@ void cli_handle(int fd, char* cmd)
   char* p;
   int argc = 1;
   char* argv[10] = {"ss7", };
-  int i, j;
+  int i, j, res;
   char* result = "command not understood\n";
 
   p = strsep(&cmd, "\n");
@@ -507,5 +507,5 @@ void cli_handle(int fd, char* cmd)
       return;
     }
   }
-  write(fd, result, strlen(result));
+  res = write(fd, result, strlen(result));
 }

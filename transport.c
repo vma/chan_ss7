@@ -107,8 +107,6 @@ static int setnonblock_fd(int s)
 
 
 
-static int transport_socket(int localport, const char* remotehost, int remoteport);
-
 #ifndef MTP_OVER_UDP
 static void set_buffer_info(int fd, int cic, int numbufs)
 {
@@ -338,6 +336,8 @@ int io_send_dtmf(int fd, int cic, char digit)
 
 #else
 #define MTPPORT 11000
+static int transport_socket(int localport, const char* remotehost, int remoteport);
+
 int openschannel(struct link* link)
 {
   int id = link->schannel + link->first_zapid;
@@ -402,9 +402,6 @@ int io_send_dtmf(int fd, int cic, char digit)
 {
   return 0;
 }
-
-#endif
-
 
 static int setup_socket(int localport, int sockettype, int ipproto)
 {
@@ -481,3 +478,4 @@ static int transport_socket(int localport, const char* remotehost, int remotepor
 
   return s;
 }
+#endif

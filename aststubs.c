@@ -104,10 +104,13 @@ void ast_cli(int fd, const char *fmt, ...)
 {
   char buff[10240];
   va_list ap;
+  int res;
 
   va_start(ap, fmt);
   vsprintf(buff, fmt, ap);
-  write(fd, buff, strlen(buff));
+  res = write(fd, buff, strlen(buff));
+  if (res == -1) {
+  }
 }
 
 void ast_log(int level, const char *file, int line, const char *function, const char *fmt, ...)
@@ -504,10 +507,9 @@ const char* ast_category_browse(struct ast_config* cfg, const char* cat)
   return confnextsection(cfg);
 }
 
-struct ast_variable* ast_variable_browse(const struct ast_config* cfg, const char* cat)
+struct ast_variable* ast_variable_browse(struct ast_config* cfg, const char* cat)
 {
   const char* key;
-  const char* value;
   struct ast_variable* var;
   struct ast_variable* first = NULL;
   struct ast_variable* prev = NULL;
