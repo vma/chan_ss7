@@ -31,6 +31,7 @@
 
 #include <pthread.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <sys/socket.h>
 
 #ifdef MTP_STANDALONE
@@ -82,8 +83,12 @@ AST_MUTEX_DEFINE_STATIC(glock);
 /* Delay between monitor wakeups. */
 #define MONITOR_FREQ 500
 
-static void wakeup_monitor(void) {
-  write(get_receive_pipe(), "", 1);
+static void wakeup_monitor(void)
+{
+  int res = write(get_receive_pipe(), "", 1);
+  if (res == -1) {
+    ast_log(LOG_ERROR, "Failed to write receive_pipe: %s.\n", strerror(errno));
+  }
 }
 
 static struct sched_context *monitor_sched = NULL;
@@ -109,7 +114,10 @@ int start_timer(int msec, int (*cb)(const void *), void *data)
 
 void stop_timer(int tid)
 {
-  mtp_sched_del(monitor_sched, tid);
+  int res = mtp_sched_del(monitor_sched, tid);
+  if (!res) {
+    ast_log(LOG_DEBUG, "Failed to delete timer\n");
+  }
 }
 
 
@@ -158,7 +166,7 @@ int start_thread(pthread_t* t, void* (*thread_main)(void*data), int* running, in
 
   res = ast_pthread_create(t, NULL, thread_main, NULL);
   if(res != 0) {
-    ast_log(LOG_ERROR, "Failed to create thread: %s.\n", strerror(res));
+    ast_log(LOG_ERROR, "Failed to create thread: %s.\n", strerror(errno));
     return -1;
   }
 
@@ -167,7 +175,7 @@ int start_thread(pthread_t* t, void* (*thread_main)(void*data), int* running, in
   res = pthread_setschedparam(*t, SCHED_RR, &sp);
   if(res != 0) {
     ast_log(LOG_WARNING, "Failed to set thread to realtime priority: %s.\n",
-            strerror(res));
+            strerror(errno));
   }
 
   *running = 1;

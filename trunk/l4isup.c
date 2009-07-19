@@ -67,6 +67,13 @@
 #define DAHDI_LAW_ALAW ZT_LAW_ALAW
 #define DAHDI_LAW_MULAW ZT_LAW_MULAW
 #define DAHDI_SETGAINS ZT_SETGAINS
+#ifdef ZT_TONEDETECT
+#define DAHDI_TONEDETECT ZT_TONEDETECT
+#define DAHDI_TONEDETECT_ON ZT_TONEDETECT_ON
+#define DAHDI_TONEDETECT_MUTE ZT_TONEDETECT_MUTE
+#define DAHDI_EVENT_DTMFDOWN ZT_EVENT_DTMFDOWN
+#define DAHDI_EVENT_DTMFDUP ZT_EVENT_DTMFUP
+#endif
 #define dahdi_gains zt_gains
 #else
 #include <dahdi/user.h>
@@ -2184,6 +2191,20 @@ static int ss7_answer(struct ast_channel *chan) {
 static void ss7_handle_event(struct ss7_chan *pvt, int event) {
   int res, doing_dtmf;
 
+#ifdef DAHDI_TONEDETECT
+  if(event & DAHDI_EVENT_DTMFDOWN ) {
+    pvt->frame.frametype = AST_FRAME_DTMF_BEGIN;
+    pvt->frame.subclass = event & 0xff;
+    return ;
+       
+  }
+  if(event &  DAHDI_EVENT_DTMFUP ) {
+    pvt->frame.frametype = AST_FRAME_DTMF_END;
+    pvt->frame.subclass = event & 0xff;
+    return;
+		
+  }
+#endif
   switch(event) {
   case DAHDI_EVENT_DIALCOMPLETE:
     /* Chech if still doing DTMF sending. If not, set flag to start
@@ -2323,7 +2344,13 @@ static struct ast_frame *ss7_read(struct ast_channel * chan) {
 #endif
   pvt->frame.datalen = sofar;
   pvt->frame.samples = sofar;
-  processed_frame = ast_dsp_process(chan, pvt->dsp, &pvt->frame);
+
+   if(pvt->dsp){
+	  	processed_frame = ast_dsp_process(chan, pvt->dsp, &pvt->frame);
+   } else {
+		/*Incase of HWDTF */
+		processed_frame = &pvt->frame;
+	}
 
   ast_mutex_unlock(&pvt->lock);
 
@@ -4500,6 +4527,7 @@ static int setup_cic(struct link* link, int channel)
   int cic = link->first_cic + channel;
   char* lang = link->linkset->language;
   char* ctxt = link->linkset->context;
+  int features,x;
   struct ss7_chan *pvt;
 
   pvt = malloc(sizeof(*pvt));
@@ -4524,18 +4552,26 @@ static int setup_cic(struct link* link, int channel)
   pvt->zaptel_fd = openchannel(link, channel);
   if (pvt->zaptel_fd < 0)
     return pvt->zaptel_fd < 0;
-  pvt->dsp = ast_dsp_new();
-  if(pvt->dsp == NULL) {
-    ast_log(LOG_WARNING, "Failed to allocate DSP for CIC=%d.\n", pvt->cic);
-    return -1;
+  features = DSP_FEATURE_DIGIT_DETECT;
+#ifdef DAHDI_TONEDETECT
+  x = DAHDI_TONEDETECT_ON | DAHDI_TONEDETECT_MUTE;
+  if (ioctl(pvt->zaptel_fd, DAHDI_TONEDETECT, &x) == 0) {
+    features = 0;
   }
-  ast_dsp_set_features(pvt->dsp, DSP_FEATURE_DIGIT_DETECT);
-#if defined(USE_ASTERISK_1_2) ||  defined(USE_ASTERISK_1_4)
-  ast_dsp_digitmode(pvt->dsp, DSP_DIGITMODE_DTMF | (link->relaxdtmf ? DSP_DIGITMODE_RELAXDTMF : 0));
-#else
-  ast_dsp_set_digitmode(pvt->dsp, DSP_DIGITMODE_DTMF | (link->relaxdtmf ? DSP_DIGITMODE_RELAXDTMF : 0));
 #endif
-
+  if(features){
+    pvt->dsp = ast_dsp_new();
+    if(pvt->dsp == NULL) {
+      ast_log(LOG_WARNING, "Failed to allocate DSP for CIC=%d.\n", pvt->cic);
+      return -1;
+    }
+    ast_dsp_set_features(pvt->dsp, DSP_FEATURE_DIGIT_DETECT);
+#if defined(USE_ASTERISK_1_2) ||  defined(USE_ASTERISK_1_4)
+    ast_dsp_digitmode(pvt->dsp, DSP_DIGITMODE_DTMF | (link->relaxdtmf ? DSP_DIGITMODE_RELAXDTMF : 0));
+#else
+    ast_dsp_set_digitmode(pvt->dsp, DSP_DIGITMODE_DTMF | (link->relaxdtmf ? DSP_DIGITMODE_RELAXDTMF : 0));
+#endif
+  }
   /* Set gain - Channel must be in audiomode when setting gain */
   set_audiomode(pvt->zaptel_fd);
   set_gain(pvt, link->rxgain, link->txgain);

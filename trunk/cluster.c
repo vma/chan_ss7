@@ -496,7 +496,7 @@ static void cluster_send_keep_alive(void)
     for (targetix = 0; targetix < this_host->receivers[receiverix].n_targets; targetix++) {
       int tdiff = timediff_msec(now, receiver_stats[receiverix].target[targetix].lasttry);
       if (tdiff > CLUSTER_KEEP_ALIVE_INTERVAL)
-	cluster_send_packet(&this_host->receivers[receiverix], targetix, (char*) &event, sizeof(event));
+	cluster_send_packet(&this_host->receivers[receiverix], targetix, (unsigned char*) &event, sizeof(event));
     }
   }
 }

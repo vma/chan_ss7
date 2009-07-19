@@ -117,7 +117,7 @@ struct ast_config* ast_config_load(const char* filename, struct ast_flags flags)
 #endif
 void ast_config_destroy(struct ast_config* cfg);
 const char* ast_category_browse(struct ast_config* cfg, const char* cat);
-struct ast_variable* ast_variable_browse(const struct ast_config* cfg, const char* cat);
+struct ast_variable* ast_variable_browse(struct ast_config* cfg, const char* cat);
 int ast_jb_read_conf(struct ast_jb_conf *conf, const char *varname, const char *value);
 
 
@@ -130,3 +130,4 @@ int ast_cli_unregister_multiple(struct ast_cli_entry *e, int len);
 void ast_cli_register_multiple(struct ast_cli_entry *e, int len);
 void ast_cli_unregister_multiple(struct ast_cli_entry *e, int len);
 #endif
+void ast_join(char* buf, int size, char* args[]);

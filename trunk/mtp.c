@@ -279,6 +279,14 @@ void mtp_enqueue_control(struct mtp_req *req) {
 }
 
 
+static void delete_timer(struct sched_context *con, int id)
+{
+  int res = mtp_sched_del(con, id);
+  if (res) {
+    ast_log(LOG_ERROR, "Failed to delete timer\n");
+  }
+}
+
 
 static inline ss7_variant variant(mtp2_t* m)
 {
@@ -472,9 +480,8 @@ static int t17_timeout(const void *data) {
 
 static void t17_stop(mtp2_t *m)
 {
-  int res;
   if(m->mtp3_t17 != -1) {
-    res = mtp_sched_del(mtp2_sched, m->mtp3_t17);
+    delete_timer(mtp2_sched, m->mtp3_t17);
     m->mtp3_t17 = -1;
   }
 }
@@ -495,10 +502,8 @@ static int t1_timeout(const void *data) {
 
 static void t1_stop(mtp2_t *m)
 {
-  int res;
-
   if(m->mtp2_t1 != -1) {
-    res = mtp_sched_del(mtp2_sched, m->mtp2_t1);
+    delete_timer(mtp2_sched, m->mtp2_t1);
     m->mtp2_t1 = -1;
   }
 }
@@ -519,10 +524,8 @@ static int t2_timeout(const void *data) {
 
 static void t2_stop(mtp2_t *m)
 {
-  int res;
-
   if(m->mtp2_t2 != -1) {
-    res = mtp_sched_del(mtp2_sched, m->mtp2_t2);
+    delete_timer(mtp2_sched, m->mtp2_t2);
     m->mtp2_t2 = -1;
   }
 }
@@ -543,9 +546,8 @@ static int t3_timeout(const void *data) {
 
 static void t3_stop(mtp2_t *m)
 {
-  int res;
   if(m->mtp2_t3 != -1) {
-    res = mtp_sched_del(mtp2_sched, m->mtp2_t3);
+    delete_timer(mtp2_sched, m->mtp2_t3);
     m->mtp2_t3 = -1;
   }
 }
@@ -566,9 +568,8 @@ static int t4_timeout(const void *data) {
 
 static void t4_stop(mtp2_t *m)
 {
-  int res;
   if(m->mtp2_t4 != -1) {
-    res = mtp_sched_del(mtp2_sched, m->mtp2_t4);
+    delete_timer(mtp2_sched, m->mtp2_t4);
     m->mtp2_t4 = -1;
   }
 }
@@ -724,27 +725,23 @@ static void start_initial_alignment(mtp2_t *m, char* reason) {
 
 static void t7_stop(mtp2_t *m)
 {
-  int res;
-
   if(m->mtp2_t7 != -1) {
-    res = mtp_sched_del(mtp2_sched, m->mtp2_t7);
+    delete_timer(mtp2_sched, m->mtp2_t7);
     m->mtp2_t7 = -1;
   }
 }
 
 static void mtp2_cleanup(mtp2_t *m)
 {
-  int res;
-
   /* Stop SLTA response timeout. */
   if(m->sltm_t1 != -1) {
-    res = mtp_sched_del(mtp2_sched, m->sltm_t1);
+    delete_timer(mtp2_sched, m->sltm_t1);
     m->sltm_t1 = -1;
   }
 
   /* Stop sending SLTM. */
   if(m->sltm_t2 != -1) {
-    res = mtp_sched_del(mtp2_sched, m->sltm_t2);
+    delete_timer(mtp2_sched, m->sltm_t2);
     m->sltm_t2 = -1;
   }
 
@@ -1207,9 +1204,8 @@ static void mtp2_good_frame(mtp2_t *m, unsigned char *buf, int len) {
       if (m->send_sltm) {
 	mtp3_send_sltm(m);
 	if(m->sltm_t2 != -1) {
-	  int res;
 	  fifo_log(m, LOG_DEBUG, "SLTM timer T2 not cleared, restarted (%d)\n", m->sltm_t2);
-	  res = mtp_sched_del(mtp2_sched, m->sltm_t2);
+	  delete_timer(mtp2_sched, m->sltm_t2);
 	}
 
 	m->sltm_t2 = mtp_sched_add(mtp2_sched, 61000, mtp3_send_sltm, m);
@@ -1428,8 +1424,7 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
 
       /* Clear the Q.707 timer T1, since the SLTA was received. */
       if(m->sltm_t1 != -1) {
-	int res;
-	res = mtp_sched_del(mtp2_sched, m->sltm_t1);
+	delete_timer(mtp2_sched, m->sltm_t1);
 	m->sltm_t1 = -1;
       }
 

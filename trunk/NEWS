@@ -1,10 +1,26 @@
 This is the NEWS for chan_ss7. This version is maintained by Anders Baekgaard (ab@dicea.dk).
 Please send bug reports, feature requests etc. to chan_ss7@dicea.dk.
 
+Specfication for version 1.2
+ - Compatible with Asterisk 1.2.x, 1.4.x and 1.6.x.
+ - MTP2 (Q.703) implementation
+ - MTP3 (Q.704) implementation (subset).
+ - ISUP (Q.76x) implementation (mostly complete).
+ - Supports Dahdi/Zaptel compatible digital interfaces, e.g. Redfone, Sangoma, Digium
+ - Facilities for MTP2 packet protocol analysis using e.g. wireshark/ethereal
+ - Supports high call volumes
+ - Supports multiple linksets with different DPCs
+ - Supports linksets with multiple links.
+ - Supports load sharing and MTP changeover.
+ - Supports multiple hosts (cluster) configuration with load sharing and failover.
+ - Flexible Dial command syntax for SS7 to allow routing to different linksets.
+
+
 New in version 1.2
 - Handling of UBA fixed.
-- Compensation for problems with "resource temparily unavailable" when doing zaptel i/o
-- New config parameters for linkset: blockin and blockout. Sets initial blocking status for CICs
+- Compensation for problems with "resource temparily unavailable" when doing zaptel i/o.
+- New config parameters for linkset: blockin and blockout. Sets initial blocking status for CICs.
+- Hardware DTMF support (thanks to Sangoma).
 
 New in version 1.1
 - Fixed buffer overflows in config.c.
@@ -41,4 +57,5 @@ New in verion 1.0.0
 - The schannel entry in link description in configuration file may specify remote MTP stack.
 - PDU dump is now in PCAP format, suitable for wireshark.
 - Lots and lots of clean ups and fixes.
+
 
