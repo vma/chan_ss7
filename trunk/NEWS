@@ -21,6 +21,7 @@ New in version 1.2
 - Compensation for problems with "resource temparily unavailable" when doing zaptel i/o.
 - New config parameters for linkset: blockin and blockout. Sets initial blocking status for CICs.
 - Hardware DTMF support (thanks to Sangoma).
+- Dahdi and Asterisk 1.6.x support fixed
 
 New in version 1.1
 - Fixed buffer overflows in config.c.
