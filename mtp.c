@@ -265,13 +265,12 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len);
    The fifo is lock-free (one thread may put and another get simultaneously),
    but multiple threads doing put must be serialized with this mutex. */
 AST_MUTEX_DEFINE_STATIC(mtp_control_mutex);
-static struct lffifo *mtp_control_fifo = NULL;
 /* Queue a request to the MTP thread. */
 void mtp_enqueue_control(struct mtp_req *req) {
   int res;
 
   ast_mutex_lock(&mtp_control_mutex);
-  res = lffifo_put(mtp_control_fifo, (unsigned char *)req, sizeof(struct mtp_req) + req->len);
+  res = lffifo_put(controlbuf, (unsigned char *)req, sizeof(struct mtp_req) + req->len);
   ast_mutex_unlock(&mtp_control_mutex);
   if(res != 0) {
     ast_log(LOG_WARNING, "MTP control fifo full (MTP thread hanging?).\n");
@@ -2086,10 +2085,6 @@ int get_receive_pipe(void) {
 
 struct lffifo *mtp_get_receive_fifo(void) {
   return receivebuf;
-}
-
-struct lffifo *mtp_get_control_fifo(void) {
-  return controlbuf;
 }
 
 static void mtp_cleanup_link(struct mtp2_state* m) {

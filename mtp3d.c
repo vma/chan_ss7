@@ -636,6 +636,20 @@ static int setup_daemon(void)
   return 0;
 }
 
+static int make_pid_file(void)
+{
+  if (do_pid) {
+    FILE* pidfile = fopen("/var/run/mtp3d.pid", "w");
+    if (!pidfile) {
+      fprintf(stderr, "Cannot open /var/run/mtp3d.pid %d: %s\n", errno, strerror(errno));
+      return 1;
+    }
+    fprintf(pidfile, "%d\n", getpid());
+    fclose(pidfile);
+  }
+  return 0;
+}
+
 int cmd_linkset_status(int fd, int argc, char *argv[])
 {
   return 0;
@@ -708,6 +722,7 @@ int main(int argc, char* argv[])
     ast_log(LOG_ERROR, "Unable to initialize MTP.\n");
     return -1;
   }
+  make_pid_file();
   if(start_mtp_thread()) {
     ast_log(LOG_ERROR, "Unable to start MTP thread.\n");
     return -1;
