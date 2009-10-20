@@ -169,6 +169,8 @@ typedef struct mtp2_state {
   char* name;
   /* Open fd for signalling link dahdi device. */
   int fd;
+  int hwmtp2;
+  int hwhdlcfcs;
 
   /* Receive buffer. */
   unsigned char rx_buf[272 + 7];
@@ -348,13 +350,18 @@ int cmd_mtp_data(int fd, int argc, char *argv[])
 }
 
 
-static inline int peerpc(mtp2_t* m)
+static inline int peeropc(mtp2_t* m)
 {
   return m->link->linkset->dpc;
 }
 
 
-static inline int linkpeerpc(mtp2_t* m)
+static inline int peerdpc(mtp2_t* m)
+{
+  return m->link->linkset->dpc;
+}
+
+static inline int linkpeerdpc(mtp2_t* m)
 {
   if (m->link->dpc)
     return m->link->dpc;
@@ -991,7 +998,7 @@ static int mtp3_send_sltm(const void *data) {
     subservice = 0x8;
 
   fifo_log(m, LOG_EVENT, "Sending SLTM to peer on link '%s'....\n", m->name);
-  mtp3_put_label(m->sls, variant(m), this_host->opc, linkpeerpc(m), message_sltm);
+  mtp3_put_label(m->sls, variant(m), peeropc(m), linkpeerdpc(m), message_sltm);
   if(variant(m)==ITU_SS7)
   {
     message_sltm[4] = 0x11;       /* SLTM */
@@ -1042,6 +1049,11 @@ static void mtp2_process_lssu(mtp2_t *m, unsigned char *buf, int fsn, int fib) {
       m->send_bsn = fsn;
       m->send_bib = fib;
 
+      if(m->hwmtp2 && (m->state == MTP2_NOT_ALIGNED)) {
+	t2_stop(m);
+	t3_start(m);
+	m->state = MTP2_ALIGNED;
+      }
       if(m->state == MTP2_NOT_ALIGNED) {
         t2_stop(m);
         t3_start(m);
@@ -1150,6 +1162,19 @@ static void mtp2_good_frame(mtp2_t *m, unsigned char *buf, int len) {
 
   li = buf[2] & 0x3f;
 
+  if (option_debug > 2) {
+    if (m->hwmtp2 || m->hwhdlcfcs || (li > 2)) {
+      char pbuf[1000], hex[30];
+      int i;
+      strcpy(pbuf, "");
+      for(i = 0; i < li - 1 && i + 4 < len; i++) {
+	sprintf(hex, " %02x", buf[i + 4]);
+	strcat(pbuf, hex);
+      }
+      fifo_log(m, LOG_DEBUG, "Got MSU on link '%s/%d' sio=%d slc=%d m.sls=%d bsn=%d/%d, fsn=%d/%d, sio=%02x, len=%d:%s\n", m->name, m->schannel, buf[3] & 0xf, (buf[7] & 0xf0) >> 4, m->sls, bib, bsn, fib, fsn, buf[3], li, pbuf);
+    }
+  }
+
   if(li + 3 > len) {
     fifo_log(m, LOG_NOTICE, "Got unreasonable length indicator %d (len=%d) on link '%s'.\n",
 	     li, len, m->name);
@@ -1190,7 +1215,7 @@ static void mtp2_good_frame(mtp2_t *m, unsigned char *buf, int len) {
         subservice = 0x8;
 
       fifo_log(m, LOG_NOTICE, "Sending TRA to peer on link '%s'....\n", m->name);
-      mtp3_put_label(m->sls, variant(m), this_host->opc, linkpeerpc(m), message_tra);
+      mtp3_put_label(m->sls, variant(m), peeropc(m), linkpeerdpc(m), message_tra);
       if(variant(m)==ITU_SS7) {
         message_tra[4] = 0x17; /* TRA */
         mtp2_queue_msu(m, (subservice << 4) | 0, message_tra, 5);
@@ -1406,6 +1431,8 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
 	      subservice = 0x8;
 
       mtp3_put_label(slc, variant(m), dpc, opc, message_slta);
+      if (slc != m->sls)
+	fifo_log(m, LOG_WARNING, "Got SLTM with unexpected sls=%d, OPC=%d DPC=%d on '%s/%d' sls=%d, state=%d.\n", slc, opc, dpc, m->name, m->schannel, m->sls, m->state);
       fifo_log(m, LOG_DEBUG, "Got SLTM, OPC=%d DPC=%d, sending SLTA '%s', state=%d.\n", opc, dpc, m->name, m->state);
       if(variant(m)==ITU_SS7) {
         message_slta[4] = 0x21;
@@ -1434,7 +1461,7 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
         i = memcmp(sltm_pattern, &(buf[13]), sizeof(sltm_pattern));
 
       if(slc == m->sls &&
-	 opc == linkpeerpc(m) && dpc == this_host->opc &&
+	 opc == linkpeerdpc(m) && dpc == peeropc(m) &&
 	 0 == i ) {
 	fifo_log(m, LOG_DEBUG, "Got valid SLTA response on link '%s', state=%d.\n", m->name, m->state);
 	l4up(m);
@@ -1474,6 +1501,18 @@ static void mtp2_read_su(mtp2_t *m, unsigned char *buf, int len) {
   int res;
   unsigned char nextbyte;
 
+  if (m->hwmtp2 || m->hwhdlcfcs) {
+    fifo_log(m, LOG_DEBUG, "Got su on link '%s/%d': len %d buf[3] 0x%02x\n", m->name, m->schannel, len, (unsigned int)buf[3]);
+    if((len-2 > MTP_MAX_PCK_SIZE-8) || (len < 3)) {
+      char msg[80];
+      sprintf(msg, "Overlong/too short MTP2 frame %d, dropping\n", len-2);
+      mtp2_bad_frame(m, msg);
+      return;
+    }
+    mtp2_good_frame(m, buf, len-2);
+    m->readcount += len;
+    return;
+  }
   for(;;) {
     while(m->h_rx.bits <= 24 && i < len) {
       nextbyte = buf[i++];
@@ -1847,9 +1886,18 @@ void *mtp_thread_main(void *data) {
       for (i = 0; i < this_host->n_schannels; i++) {
 	m = &mtp2_state[i];
 	if(fds[i].revents & POLLOUT) {
+	  unsigned char* buf;
+	  unsigned int len;
 	  int count = 0;
 
-	  for(;;) {
+	  if (m->hwmtp2 || m->hwhdlcfcs) {
+	    mtp2_pick_frame(m);
+	    buf = m->tx_buffer;
+	    len = m->tx_len+2;
+	    buf[m->tx_len] = buf[m->tx_len+1] = 0;
+	    log_frame(m, 1, m->tx_buffer, m->tx_len);
+	  }
+	  else {
 	    /* We buffer an extra ZAP_BUF_SIZE bytes locally. This creates
 	       extra latency, but it is necessary to be able to detect write()
 	       buffer underrun by doing an extra write() to see the EAGAIN
@@ -1859,7 +1907,11 @@ void *mtp_thread_main(void *data) {
 	      mtp2_fill_dahdi_buf(m, m->zap_buf);
 	      m->zap_buf_full = 1;
 	    }
-	    res = write(fds[i].fd, m->zap_buf, ZAP_BUF_SIZE);
+	    buf = m->zap_buf;
+	    len = ZAP_BUF_SIZE;
+	  }
+	  for(;;) {
+            res = write(fds[i].fd, buf, len);
 	    if(res == 0) {
 	      /* EOF. */
 	      break;
@@ -1879,6 +1931,12 @@ void *mtp_thread_main(void *data) {
 	    } else {
 	      /* Successful write. */
 	      count += res;
+	      if (m->hwmtp2 || m->hwhdlcfcs) {
+		buf += res;
+		len -= res;
+		if (!len)
+		  break;
+	      }
 #ifdef DO_RAW_DUMPS
 	      mtp2_dump_raw(m, m->zap_buf, res, 1);
 #endif
@@ -1888,7 +1946,6 @@ void *mtp_thread_main(void *data) {
 #endif
 	    }
 	  }
-	  //if(count > 2*ZAP_BUF_SIZE) fifo_log(m, LOG_NOTICE, "%d bytes written (%d buffers).\n", count, count/ZAP_BUF_SIZE);
 	  if(count >= NUM_ZAP_BUF*ZAP_BUF_SIZE) {
 	    fifo_log(m, LOG_NOTICE, "Empty Dahdi output buffer detected, outgoing "
 		     "packets may have been lost on link '%s'.\n", m->name);
@@ -2144,6 +2201,8 @@ static void mtp_init_link_data(struct mtp2_state* m) {
   m->link = NULL;
 
   m->fd = -1;
+  m->hwmtp2 = 0;
+  m->hwhdlcfcs = 0;
 
   m->rx_len = 0;
   m->rx_crc = 0xffff;
@@ -2178,13 +2237,18 @@ static void mtp_init_link_data(struct mtp2_state* m) {
 }
 
 static int mtp_init_link(struct mtp2_state* m, struct link* link, int slinkno) {
+  int sigtype;
   int pcbits = (link->linkset->variant == ITU_SS7) ? 14 : 24;
   mtp_init_link_data(m);
   m->link = link;
   link->mtp = m;
   fifo_log(m, LOG_DEBUG, "init link %s, linkset %s, schannel %d.\n", link->name, link->linkset->name, link->schannel);
-  if(linkpeerpc(m) < 0 || linkpeerpc(m) >= (1<<pcbits)) {
-    ast_log(LOG_ERROR, "Invalid value 0x%x for linkpeerpc.\n", linkpeerpc(m));
+  if(peeropc(m) < 0 || peeropc(m) >= (1<<24)) { 
+    ast_log(LOG_ERROR, "Invalid value 0x%x for OPC.\n", peeropc(m));
+    return -1;
+  }
+  if(linkpeerdpc(m) < 0 || linkpeerdpc(m) >= (1<<pcbits)) {
+    ast_log(LOG_ERROR, "Invalid value 0x%x for DPC.\n", linkpeerdpc(m));
     goto fail;
   }
   m->send_sltm = link->send_sltm;
@@ -2193,7 +2257,23 @@ static int mtp_init_link(struct mtp2_state* m, struct link* link, int slinkno) {
   m->sls = link->sls;
   m->subservice = link->linkset->subservice;
   m->name = link->name;
-  fasthdlc_precalc();
+
+  m->fd = openschannel(link, &sigtype);
+  if (m->fd < 0)
+    goto fail;
+  fifo_log(m, LOG_NOTICE, "Signalling channel on link '%s/%d' has signalling type 0x%04x.\n", link->name, slinkno, sigtype);
+  memset(m->backbuf, 0, sizeof(m->backbuf));
+  m->backbuf_idx = 0;
+  m->rx_len = 0;
+  m->hwmtp2 = (sigtype & DAHDI_SIG_MTP2) == DAHDI_SIG_MTP2;
+  m->hwhdlcfcs = (sigtype & DAHDI_SIG_HDLCFCS) == DAHDI_SIG_HDLCFCS;
+  if (m->hwmtp2 || m->hwhdlcfcs) {
+    adjust_schannel_buffers(m->fd, link, m->schannel, 32, 280);
+    if (link->initial_alignment)
+      t17_start(m);
+  }
+  else {
+    fasthdlc_precalc();
 #ifdef USE_ZAPTEL
     fasthdlc_init(&m->h_rx);
     fasthdlc_init(&m->h_tx);
@@ -2201,17 +2281,11 @@ static int mtp_init_link(struct mtp2_state* m, struct link* link, int slinkno) {
     fasthdlc_init(&m->h_rx, FASTHDLC_MODE_64);
     fasthdlc_init(&m->h_tx, FASTHDLC_MODE_64);
 #endif
-  /* Fill in the fasthdlc transmit buffer with the opening flag. */
-  fasthdlc_tx_frame_nocheck(&m->h_tx);
-  memset(m->backbuf, 0, sizeof(m->backbuf));
-  m->backbuf_idx = 0;
-  m->rx_len = 0;
-
-  m->fd = openschannel(link);
-  if (m->fd < 0)
-    goto fail;
-  if (link->initial_alignment)
-    start_initial_alignment(m, "Initial");
+    /* Fill in the fasthdlc transmit buffer with the opening flag. */
+    fasthdlc_tx_frame_nocheck(&m->h_tx);
+    if (link->initial_alignment)
+      start_initial_alignment(m, "Initial");
+  }
   return 0;
  fail:
   return -1;
@@ -2231,10 +2305,6 @@ int mtp_init(void) {
   controlbuf = NULL;
   receivepipe[0] = receivepipe[1] = -1;
 
-  if(this_host->opc < 0 || this_host->opc >= (1<<24)) { 
-    ast_log(LOG_ERROR, "Invalid value 0x%x for this_host->opc.\n", this_host->opc);
-    return -1;
-  }
   for (i = 0; i < n_linksets; i++) {
     sendbuf[i] = lffifo_alloc(64000);
     if(sendbuf[i] == NULL) {

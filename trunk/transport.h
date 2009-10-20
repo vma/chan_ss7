@@ -44,7 +44,8 @@ enum {
 int openchannel(struct link* link, int channel);
 void flushchannel(int fd, int cic);
 int adjust_buffers(int fd, int cic);
-int openschannel(struct link* link);
+int openschannel(struct link* link, int* sigtype);
+int adjust_schannel_buffers(int fd, struct link* link, int ts, int bufcount, int bufsize);
 int io_get_dahdi_event(int fd, int* e);
 int io_enable_echo_cancellation(int fd, int cic, int echocan_taps, int echocan_train);
 void io_disable_echo_cancellation(int fd, int cic);

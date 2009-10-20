@@ -233,6 +233,7 @@ static int load_config_linkset(struct ast_config *cfg, const char* cat)
   linkset->context = NULL;
   linkset->language = NULL;
   linkset->n_schannels = 0;
+  linkset->opc = 0;
   linkset->dpc = 0;
   linkset->dni_chunk_limit = 0;
   linkset->loadshare = LOADSHARE_COMBINED_LINKSET;
@@ -384,6 +385,16 @@ static int load_config_linkset(struct ast_config *cfg, const char* cat)
 	for (i = first; i <= last; i++)
 	  linkset->blocked[i] |= b;
 	p = strsep(&spec, ",");
+      }
+    } else if (strcasecmp(v->name, "opc") == 0) {
+      if(sscanf(v->value, "%i", &linkset->opc) != 1) {
+	ast_log(LOG_ERROR, "Invalid value '%s' for opc for linkset '%s'.\n", v->value, linkset_name);
+	return -1;
+      }
+    } else if (strcasecmp(v->name, "dpc") == 0) {
+      if(sscanf(v->value, "%i", &linkset->dpc) != 1) {
+	ast_log(LOG_ERROR, "Invalid value '%s' for dpc for linkset '%s'.\n", v->value, linkset_name);
+	return -1;
       }
     } else {
       ast_log(LOG_ERROR, "Unknown config option '%s', aborting.\n", v->name);
@@ -603,6 +614,11 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
 	return -1;
       }
       link->initial_alignment = strcasecmp(v->value, "yes") == 0;
+    } else if (strcasecmp(v->name, "stp") == 0) {
+      if(sscanf(v->value, "%i", &link->dpc) != 1) {
+	ast_log(LOG_ERROR, "Invalid value '%s' for stp for link '%s'.\n", v->value, link_name);
+	return -1;
+      }
     } else {
       ast_log(LOG_ERROR, "Unknown config option '%s', aborting.\n", v->name);
       return -1;
@@ -672,12 +688,13 @@ static int load_config_host(struct ast_config *cfg, const char* cat)
   const char *host_name = &cat[strlen("host-")];
   struct host* host = &hosts[n_hosts];
   char links_spec_buf[1000] = {0,};
-  int has_opc = 0, has_dpc = 0, has_links = 0, has_enabled = 0, has_if = 0;
+  int has_links = 0, has_enabled = 0, has_if = 0;
 
   if (n_hosts == MAX_HOSTS) {
     ast_log(LOG_ERROR, "Too many hosts defined while parsing config for host '%s' (max %d).\n", host_name, MAX_HOSTS);
     return -1;
   }
+  host->opc = 0;
   memset(host->dpc, 0, sizeof(host->dpc));
   memset(host->receivers, 0, sizeof(host->receivers));
   host->name = strdup(host_name);
@@ -699,7 +716,6 @@ static int load_config_host(struct ast_config *cfg, const char* cat)
 		"config option own_pc.\n", v->value);
 	return -1;
       }
-      has_opc = 1;
     } else if(0 == strcasecmp(v->name, "dpc")) {
       char dpc_spec_buf[1000] = {0,};
       char linkset_name_buf[1000];
@@ -737,7 +753,6 @@ static int load_config_host(struct ast_config *cfg, const char* cat)
 	  host->dpc[linkset->lsi] = dpc;
 	p = strsep(&spec, ",");
       }
-      has_dpc = 1;
     } else if(0 == strcasecmp(v->name, "peers")) {
       char peer_spec_buf[500] = {0,};
       ast_copy_string(peer_spec_buf, v->value, sizeof(peer_spec_buf));
@@ -886,14 +901,6 @@ static int load_config_host(struct ast_config *cfg, const char* cat)
       return -1;
     }
     v = v->next;
-  }
-  if (!has_opc) {
-    ast_log(LOG_ERROR, "Missing opc entry for host '%s'.\n", host_name);
-    return -1;
-  }
-  if (!has_dpc) {
-    ast_log(LOG_ERROR, "Missing dpc entry for host '%s'.\n", host_name);
-    return -1;
   }
   if (!has_links) {
     ast_log(LOG_ERROR, "Missing links entry for host '%s'.\n", host_name);
@@ -1076,8 +1083,19 @@ int load_config(int reload)
   for (i = 0; i < n_linksets; i++) {
     if (!linksets[i].enabled)
       continue;
-    linksets[i].dpc = this_host->dpc[linksets[i].lsi];
-    ast_log(LOG_NOTICE, "Configuring DPC %d for linkset '%s'.\n", linksets[i].dpc, linksets[i].name);
+    if ((linksets[i].dpc) && (this_host->dpc[linksets[i].lsi])) {
+      ast_log(LOG_ERROR, "DPC is specified in both host section and linkset section, linkset: %s'.\n", linksets[i].name);
+      goto fail;
+    }
+    if ((linksets[i].opc) && (this_host->opc)) {
+      ast_log(LOG_ERROR, "OPC is specified in both host section and linkset section, linkset: %s'.\n", linksets[i].name);
+      goto fail;
+    }
+    if (!linksets[i].dpc)
+      linksets[i].dpc = this_host->dpc[linksets[i].lsi];
+    if (!linksets[i].opc)
+      linksets[i].opc = this_host->opc;
+    ast_log(LOG_NOTICE, "Configuring OPC %d, DPC %d for linkset '%s'.\n", linksets[i].opc, linksets[i].dpc, linksets[i].name);
   }
   for (i = 0; i < n_linksets; i++) {
     int any = 0;
@@ -1086,6 +1104,10 @@ int load_config(int reload)
     for (j = 0; j < linksets[i].n_links; j++)
       for (k = 0; k < this_host->n_spans; k++)
 	if (this_host->spans[k].link == linksets[i].links[j]) {
+	  if (!linksets[i].opc) {
+	    ast_log(LOG_ERROR, "No OPC specified for linkset '%s'.\n", linksets[i].name);
+	    goto fail;
+	  }
 	  if (!linksets[i].dpc) {
 	    ast_log(LOG_ERROR, "No DPC specified for linkset '%s'.\n", linksets[i].name);
 	    goto fail;

@@ -108,7 +108,7 @@ static int setnonblock_fd(int s)
 
 
 #ifndef MTP_OVER_UDP
-static void set_buffer_info(int fd, int cic, int numbufs)
+static void set_buffer_info(int fd, int cic, int numbufs, int bufsize)
 {
   struct dahdi_bufferinfo bi;
   int res;
@@ -116,7 +116,7 @@ static void set_buffer_info(int fd, int cic, int numbufs)
   bi.txbufpolicy = DAHDI_POLICY_IMMEDIATE;
   bi.rxbufpolicy = DAHDI_POLICY_IMMEDIATE;
   bi.numbufs = numbufs;
-  bi.bufsize = AUDIO_READSIZE;
+  bi.bufsize = bufsize;
   res = ioctl(fd, DAHDI_SET_BUFINFO, &bi);
   if(res) {
     ast_log(LOG_WARNING, "Failure to set buffer policy for circuit %d: %s.\n", cic, strerror(errno));
@@ -143,8 +143,19 @@ int adjust_buffers(int fd, int cic)
     }
     return 0;
   }
-  set_buffer_info(fd, cic, bi.numbufs + 1);
+  set_buffer_info(fd, cic, bi.numbufs + 1, AUDIO_READSIZE);
   ast_log(LOG_DEBUG, "Adjusting numbufs to %d for circuit %d.\n", bi.numbufs + 1, cic);
+  return 1;
+}
+
+
+int adjust_schannel_buffers(int fd, struct link* link, int ts, int bufcount, int bufsize)
+{
+  struct dahdi_bufferinfo bi;
+  int res;
+
+  set_buffer_info(fd, link->first_cic+ts, bufcount, bufsize);
+  ast_log(LOG_NOTICE, "Adjusting channels buffers for link %s/%d, size=%d, count=%d.\n", link->name, ts, bufsize, bufcount);
   return 1;
 }
 
@@ -211,7 +222,7 @@ int openchannel(struct link* link, int channel)
     ast_log(LOG_DEBUG, "Failure to set circuit   %d to ALAW: %s.\n", cic, strerror(errno));
     return -1;
   }
-  set_buffer_info(fd, cic, 4);
+  set_buffer_info(fd, cic, 4, AUDIO_READSIZE);
   parm = AUDIO_READSIZE;
   res = ioctl(fd, DAHDI_SET_BLOCKSIZE, &parm);
   if(res) {
@@ -236,13 +247,14 @@ void flushchannel(int fd, int cic)
   if (res) {
     ast_log(LOG_WARNING, "Unable to flush input on circuit %d\n", cic);
   }
-  set_buffer_info(fd, cic, 4);
+  set_buffer_info(fd, cic, 4, AUDIO_READSIZE);
 }
 
 
-int openschannel(struct link* link)
+int openschannel(struct link* link, int* sigtype)
 {
   struct dahdi_bufferinfo bi;
+  struct dahdi_params params;
   int fd, res;
   int zapid = link->schannel + link->first_zapid;
 
@@ -258,6 +270,13 @@ int openschannel(struct link* link)
             "dahdi device: %s\n", strerror(errno));
     goto fail;
   }
+  if (ioctl(fd, DAHDI_GET_PARAMS, &params)) {
+    ast_log(LOG_WARNING, "Unable to get signalling channel params "
+            "dahdi device: %s\n", strerror(errno));
+    *sigtype = 0;
+  }
+  else
+    *sigtype = params.sigtype;
 
   res = setnonblock_fd(fd);
   if(res < 0) {
@@ -338,11 +357,12 @@ int io_send_dtmf(int fd, int cic, char digit)
 #define MTPPORT 11000
 static int transport_socket(int localport, const char* remotehost, int remoteport);
 
-int openschannel(struct link* link)
+int openschannel(struct link* link, int* sigtype)
 {
   int id = link->schannel + link->first_zapid;
   int i;
 
+  *sigtype = 0;
   for (i = 0; i < this_host->n_peers; i++) {
     if (this_host->peers[i].link == link)
       return transport_socket(MTPPORT+id, this_host->peers[i].hostname, MTPPORT+id);
@@ -369,6 +389,11 @@ int adjust_buffers(int fd, int cic)
 {
   return 1;
 }
+
+int adjust_schannel_buffers(int fd, struct link* link, int ts, int bufcount, int bufsize)
+{
+}
+
 
 void set_audiomode(int fd)
 {
