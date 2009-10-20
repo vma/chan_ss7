@@ -1,7 +1,7 @@
 This is the NEWS for chan_ss7. This version is maintained by Anders Baekgaard (ab@dicea.dk).
 Please send bug reports, feature requests etc. to chan_ss7@dicea.dk.
 
-Specfication for version 1.2
+Specfication for version 1.3
  - Compatible with Asterisk 1.2.x, 1.4.x and 1.6.x.
  - MTP2 (Q.703) implementation
  - MTP3 (Q.704) implementation (subset).
@@ -15,6 +15,11 @@ Specfication for version 1.2
  - Supports multiple hosts (cluster) configuration with load sharing and failover.
  - Flexible Dial command syntax for SS7 to allow routing to different linksets.
 
+
+New in version 1.3
+- Support for multiple OPC (opc and dpc configuration settings now allowed in linkset section).
+- Support of hardware/driver HDLC and FCS and MTP2 mode.
+- New config parameter for link: stp, specifies STP point code.
 
 New in version 1.2.1
 - Fix bug causing segmentation violation when using some cli commands

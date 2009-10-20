@@ -105,7 +105,7 @@ cli_handler(version)
 #define brief_cmd_dump_start "Start MTP2 dump to a file"
 #define usage_cmd_dump_start "Usage: ss7 dump start <file> [in|out|both] [fisu] [lssu] [msu]\n"
 #define descr_cmd_dump_start "       Start mtp2 dump to file. Either incoming, outgoing, or both(default).\n" \
-"       Optinally specify which of fisu, lssu, and msu should be dumped.\n" \
+"       Optionally specify which of fisu, lssu, and msu should be dumped.\n" \
 "       The output is in PCAP format (can be read by wireshark).\n"
 #define compl_cmd_dump_start complete_dump_start
 cli_handler(dump_start)

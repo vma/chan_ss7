@@ -60,6 +60,7 @@ struct linkset {
   char* combined;		/* combined linkset name */
   loadshare_type loadshare;
   hunting_policy hunt_policy;
+  int opc;
   int dpc;
   int enabled;
   int use_connect;

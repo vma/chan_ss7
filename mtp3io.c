@@ -156,7 +156,7 @@ int mtp3_send(int s, const unsigned char* buff, unsigned int len)
 
 void mtp3_reply(int s, const unsigned char* buff, unsigned int len, const struct sockaddr* to, socklen_t tolen)
 {
-  printf("Send packet to %s:%d\n", inet_ntoa(((struct sockaddr_in*) to)->sin_addr), ntohs(((struct sockaddr_in*) to)->sin_port));
+  ast_log(LOG_DEBUG, "Send packet to %s:%d\n", inet_ntoa(((struct sockaddr_in*) to)->sin_addr), ntohs(((struct sockaddr_in*) to)->sin_port));
   int res;
   do {
     res = sendto(s, buff, len, 0, to, tolen);

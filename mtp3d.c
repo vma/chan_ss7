@@ -214,7 +214,6 @@ void l4sccp_inservice(struct link* link)
 
 void l4sccp_event(struct mtp_event* event)
 {
-  printf("l4sccp_event\n");
   unsigned char* buf = event->buf;
   int dpc = buf[0] | ((buf[1] & 0x3f) << 8);
   int opc = ((buf[1] & 0xc0) >> 6) | (buf[2] << 2) | ((buf[3] & 0x0f) << 10);
@@ -222,7 +221,7 @@ void l4sccp_event(struct mtp_event* event)
 
   int n;
 
-  printf("SCCP event, OPC=%d, DPC=%d, typ=%d\n", opc, dpc, typ);
+  ast_log(LOG_DEBUG, "SCCP event, OPC=%d, DPC=%d, typ=%d\n", opc, dpc, typ);
   for (n = 0; n < n_registry; n++) {
     if ((registry[n].ss7_protocol == SS7_PROTO_SCCP) /* xxx check dpc/subsystem */) {
       event->sccp.slinkix = event->sccp.slink->linkix;
@@ -244,12 +243,12 @@ void l4isup_inservice(struct link* link)
 {
   if (!mtp_send_fifo)
     mtp_send_fifo = mtp_get_send_fifo();
-  printf("l4isup_inservice link=%s\n", link->name);
+  ast_log(LOG_NOTICE, "l4isup_inservice link=%s\n", link->name);
 }
 
 void l4isup_event(struct mtp_event* event)
 {
-  printf("l4isup_event\n");
+  ast_log(LOG_DEBUG, "l4isup_event\n");
   struct isup_msg isup_msg;
   int res;
 
@@ -263,7 +262,7 @@ void l4isup_event(struct mtp_event* event)
     int cic = isup_msg.cic;
     int i, n;
     struct linkset* linkset = event->isup.slink->linkset;
-    printf("ISUP event, OPC=%d, DPC=%d, CIC=%d, typ=%s\n", opc, dpc,  cic, isupmsg(isup_msg.typ));
+    ast_log(LOG_DEBUG, "ISUP event, OPC=%d, DPC=%d, CIC=%d, typ=%s\n", opc, dpc,  cic, isupmsg(isup_msg.typ));
     for (n = 0; n < n_registry; n++) {
       if (registry[n].ss7_protocol == SS7_PROTO_ISUP) {
 	struct host* host = lookup_host_by_id(registry[n].host_ix);
@@ -285,7 +284,7 @@ void l4isup_event(struct mtp_event* event)
 
 void l4isup_link_status_change(struct link* link, int up)
 {
-  printf("l4isup_link_status_change link=%s, up=%d\n", link->name, up);
+  ast_log(LOG_DEBUG, "l4isup_link_status_change link=%s, up=%d\n", link->name, up);
   link->linkset->inservice += (up*2-1);
   if (up)
     l4isup_inservice(link);
@@ -400,7 +399,6 @@ static void mtp_mainloop(void)
 	}
       if (servsock < 0)
 	continue;
-      printf("poll fd: %d, i: %d, revent 0x%04x\n", servsock, i, fds[i].revents);
       if(fds[i].revents & (POLLERR|POLLNVAL|POLLHUP)) {
 	if (i < n_listen) {
 	  rebuild_fds++;
@@ -456,10 +454,7 @@ static void mtp_mainloop(void)
 	      printf("got data from invalid source %s:%d, ignoring\n", inet_ntoa(from.sin_addr), ntohs(from.sin_port));
 	    //xxx	    break;
 	    }
-	    printf("got data on %d %s:%d\n", servsock, inet_ntoa(from.sin_addr), ntohs(from.sin_port));
 	  }
-	  else
-	    printf("got data on %d\n", servsock);
 	  if ((req->typ == MTP_REQ_ISUP) || (req->typ == MTP_REQ_SCCP)) {
 	    int p = res;
 	    do {
@@ -578,7 +573,6 @@ static void mtp_mainloop(void)
 		    break;
 		  }
 		  req->sccp.slink = &links[req->sccp.slinkix];
-		  printf("got sccp req, link %s, slinkix %d\n", link->name, req->sccp.slinkix);
 		  res = lffifo_put(mtp_send_fifo[req->sccp.slink->linkset->lsi], (unsigned char *)req, sizeof(struct mtp_req) + req->len);
 		  break;
 		}
@@ -623,6 +617,10 @@ static void sigterm(int p)
   monitor_running = 0;
 }
 
+static void sigpipe(int p)
+{
+}
+
 static int setup_daemon(void)
 {
   FILE* pidfile = fopen("/var/run/mtp3d.pid", "w");
@@ -631,6 +629,7 @@ static int setup_daemon(void)
     return 1;
   }
   signal(SIGTERM, sigterm);
+  signal(SIGPIPE, sigpipe);
   fprintf(pidfile, "%d\n", getpid());
   fclose(pidfile);
   return 0;
@@ -713,6 +712,8 @@ int main(int argc, char* argv[])
   if(load_config(0)) {
     return -1;
   }
+  signal(SIGTERM, sigterm);
+  signal(SIGPIPE, sigpipe);
   if (*dumpfn)
     setup_dump(dumpfn);
   if (do_pid)
