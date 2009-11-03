@@ -1635,6 +1635,12 @@ static void handle_complete_address(struct ss7_chan *pvt)
     /* Use underscore variable to make it inherit like other callerid info. */
     pbx_builtin_setvar_helper(chan, "__PRIREDIRECTREASON", string_reason);
   }
+  if(iam->gni.ani.present)
+    pbx_builtin_setvar_helper(chan, "__SS7_GENERIC_ANI", iam->gni.ani.num);
+  if(iam->gni.dni.present)
+    pbx_builtin_setvar_helper(chan, "__SS7_GENERIC_DNI", iam->gni.dni.num);
+  if(iam->gni.rni.present)
+    pbx_builtin_setvar_helper(chan, "__SS7_GENERIC_RNI", iam->gni.rni.num);
 
   if (!pvt->link->linkset->use_connect) {
     isup_send_acm(pvt);
