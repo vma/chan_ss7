@@ -50,8 +50,8 @@ static int connect_socket(const char* host, const char* port)
 
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_INET;
-  hints.ai_socktype = SOCK_STREAM;
-  hints.ai_protocol = IPPROTO_TCP;
+  hints.ai_socktype = MTP3_SOCKETTYPE;
+  hints.ai_protocol = MTP3_IPPROTO;
   res = getaddrinfo(host, port, NULL, &result);
   if (res != 0) {
     fprintf(stderr, "Invalid hostname/IP address '%s' or port '%s': %s.\n", host, port, gai_strerror(res)
@@ -59,7 +59,6 @@ static int connect_socket(const char* host, const char* port)
     return -1;
   }
   for (rp = result; rp; rp = rp->ai_next) {
-    /* This is not working for non TCP/UDP protocols:   res = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol); */
     res = socket(rp->ai_family, hints.ai_socktype, hints.ai_protocol);
     if (res == -1)
       continue;
@@ -84,6 +83,7 @@ int main(int argc, char* argv[])
   struct mtp_req* req = (struct mtp_req*) buf;
   int c, i, res;
   int sock;
+  struct pollfd fds[1];
 
   while ((c = getopt(argc, argv, "h:p:")) != -1) {
     switch (c) {
@@ -112,10 +112,16 @@ int main(int argc, char* argv[])
     fprintf(stderr, "Could not write socket: %s.\n", strerror(errno));
     return -1;
   }
+  fds[0].fd = sock;
+  fds[0].events = POLLIN|POLLERR|POLLNVAL|POLLHUP;
+  res = poll(fds, 1, 10000);
   shutdown(sock, SHUT_WR);
   do {
     res = read(sock, buf, sizeof(buf));
+    printf("read %d\n", res);
     if (res == -1) {
+      if (errno == ENOTCONN)
+	break;
       fprintf(stderr, "Could not read socket: %s.\n", strerror(errno));
       return -1;
     }
