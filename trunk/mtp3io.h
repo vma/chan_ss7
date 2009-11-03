@@ -25,7 +25,7 @@
 #define MTP3_SOCKETTYPE SOCK_STREAM
 #define MTP3_IPPROTO IPPROTO_TCP
 //define MTP3_SOCKETTYPE SOCK_SEQPACKET
-//define MTP3_IPPROTO IPPROTO_SCTP
+//#define MTP3_IPPROTO IPPROTO_SCTP
 
 #define SS7_PROTO_ISUP 5
 #define SS7_PROTO_SCCP 3
@@ -145,6 +145,8 @@ struct mtp_event {
   unsigned char buf[0];
 };
 
+extern int mtp3_sockettype;
+extern int mtp3_ipproto;
 
 int mtp3_setup_socket(int port, int schannel);
 int mtp3_connect_socket(const char* host, const char* port);
