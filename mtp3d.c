@@ -51,6 +51,7 @@
 #include "dump.h"
 
 
+static int do_fork = 0;
 static int do_pid = 0;
 
 static struct lffifo **mtp_send_fifo;
@@ -408,27 +409,30 @@ static void mtp_mainloop(void)
 	rebuild_fds++;
 	continue;
       }
-#if MTP3_SOCKETTYPE == SOCK_STREAM
-      if (i < n_listen) {
-	struct sockaddr_in from_addr;
-	unsigned int len = sizeof(struct sockaddr_in);
-	int afd = accept(servsock, (struct sockaddr *)&from_addr, &len);
-	if (afd != -1) {
-	  ast_log(LOG_NOTICE, "Accepted socket connection from %s, fd %d\n", inet_ntoa(from_addr.sin_addr), afd);
-	  setnonblock_fd(afd);
-	  asockets[n_asockets++] = afd;
-	  rebuild_fds = 1;
-	  continue;
-	}
-	else {
-	  ast_log(LOG_WARNING, "Accept of receiver connection failed: %s.\n", strerror(errno));
+      if (mtp3_sockettype == SOCK_STREAM) {
+	if (i < n_listen) {
+	  struct sockaddr_in from_addr;
+	  unsigned int len = sizeof(struct sockaddr_in);
+	  int afd = accept(servsock, (struct sockaddr *)&from_addr, &len);
+	  if (afd != -1) {
+	    ast_log(LOG_NOTICE, "Accepted socket connection from %s, fd %d\n", inet_ntoa(from_addr.sin_addr), afd);
+	    setnonblock_fd(afd);
+	    asockets[n_asockets++] = afd;
+	    rebuild_fds = 1;
+	    continue;
+	  }
+	  else {
+	    ast_log(LOG_WARNING, "Accept of receiver connection failed: %s.\n", strerror(errno));
+	  }
 	}
       }
-#endif
       for(;;) {
 	struct sockaddr_in from;
 	socklen_t fromlen = sizeof(from);
-	res = recvfrom(servsock, buf, sizeof(struct mtp_req), 0, &from, &fromlen);
+	if (mtp3_ipproto == IPPROTO_TCP)
+	  res = recvfrom(servsock, buf, sizeof(struct mtp_req), 0, &from, &fromlen);
+	else
+	  res = recvfrom(servsock, buf, MTP_REQ_MAX_SIZE, 0, &from, &fromlen);
 	if(res == 0) {
 	  /* EOF. */
 	  close_socket(servsock, asockets, &n_asockets, i-n_listen);
@@ -455,10 +459,18 @@ static void mtp_mainloop(void)
 	    //xxx	    break;
 	    }
 	  }
-	  if ((req->typ == MTP_REQ_ISUP) || (req->typ == MTP_REQ_SCCP)) {
+	  if ((req->typ == MTP_REQ_ISUP) || (req->typ == MTP_REQ_SCCP) || (req->typ == MTP_REQ_CLI)) {
 	    int p = res;
 	    do {
-	      res = recvfrom(servsock, &buf[p], req->len, 0, &from, &fromlen);
+	      if (req->len > sizeof(buf)-res) {
+		ast_log(LOG_WARNING, "Packet too large %d on fd %d, closing connection.\n", req->len, servsock);
+		shutdown(servsock, SHUT_RD);
+		res = 0;
+	      }
+	      else {
+		if (mtp3_ipproto == IPPROTO_TCP)
+		  res = recvfrom(servsock, &buf[p], req->len, 0, &from, &fromlen);
+	      }
 	      if (res == 0) {
 		ast_log(LOG_WARNING, "Unexpectec EOF on mtp3 socket %d\n", servsock);
 		close_socket(servsock, asockets, &n_asockets, i-n_listen);
@@ -495,10 +507,7 @@ static void mtp_mainloop(void)
 		      break;
 		}
 	      }
-	      if (i == n_registry)
-		n_registry++;
-	      printf("got register protocol %d, link %d, clients now %d\n", req->regist.ss7_protocol, req->regist.linkix, n_registry);
-	      if (n_registry == MAXCLIENTS-1) {
+	      if (i == MAXCLIENTS) {
 		ast_log(LOG_ERROR, "Too many client connections\n");
 		break;
 	      }
@@ -520,6 +529,8 @@ static void mtp_mainloop(void)
 	      }
 	      else
 		ast_log(LOG_ERROR, "Unknown req register ss7 protocol %d.\n", req->regist.ss7_protocol);
+	      if (i == n_registry)
+		n_registry++;
 	    }
 	    break;
 	  case MTP_REQ_ISUP:
@@ -540,7 +551,7 @@ static void mtp_mainloop(void)
 		  }
 		  req->isup.link = NULL;
 		  req->isup.slink = &links[req->isup.slinkix];
-		  printf("got isup req, link %s, slinkix %d\n", link->name, req->isup.slinkix);
+		  ast_log(LOG_DEBUG, "ISUP req, link %s, slinkix %d\n", link->name, req->isup.slinkix);
 		  res = lffifo_put(mtp_send_fifo[req->isup.slink->linkset->lsi], (unsigned char *)req, sizeof(struct mtp_req) + req->len);
 		  break;
 		}
@@ -573,6 +584,7 @@ static void mtp_mainloop(void)
 		    break;
 		  }
 		  req->sccp.slink = &links[req->sccp.slinkix];
+		  ast_log(LOG_DEBUG, "SCCP req, link %s, slinkix %d\n", link->name, req->sccp.slinkix);
 		  res = lffifo_put(mtp_send_fifo[req->sccp.slink->linkset->lsi], (unsigned char *)req, sizeof(struct mtp_req) + req->len);
 		  break;
 		}
@@ -591,7 +603,8 @@ static void mtp_mainloop(void)
 	    cli_handle(fds[i].fd, (char*) req->buf);
 	    break;
 	  default:
-	    ast_log(LOG_NOTICE, "Unknown req type %d.\n", req->typ);
+	    ast_log(LOG_NOTICE, "Unknown req type %d, closing connection.\n", req->typ);
+	    shutdown(fds[i].fd, SHUT_RD);
 	    break;
 	  }
 	}
@@ -623,15 +636,12 @@ static void sigpipe(int p)
 
 static int setup_daemon(void)
 {
-  FILE* pidfile = fopen("/var/run/mtp3d.pid", "w");
-  if (!pidfile) {
-    fprintf(stderr, "Cannot open /var/run/mtp3d.pid %d: %s\n", errno, strerror(errno));
-    return 1;
+  if (do_fork) {
+    if (!daemon(0, 1))
+      fprintf(stderr, "daemon returned error: %d: %s\n", errno, strerror(errno));
   }
   signal(SIGTERM, sigterm);
   signal(SIGPIPE, sigpipe);
-  fprintf(pidfile, "%d\n", getpid());
-  fclose(pidfile);
   return 0;
 }
 
@@ -689,7 +699,7 @@ int main(int argc, char* argv[])
 
   strcpy(ast_config_AST_CONFIG_DIR, "/etc/asterisk");
   
-  while ((c = getopt(argc, argv, "c:m:dp")) != -1) {
+  while ((c = getopt(argc, argv, "fc:m:dp")) != -1) {
     switch (c) {
     case 'c':
       strcpy(ast_config_AST_CONFIG_DIR, optarg);
@@ -700,6 +710,9 @@ int main(int argc, char* argv[])
     case 'd':
       option_debug++;
       break;
+    case 'f':
+      do_fork = 1;
+      break;
     case 'p':
       do_pid = 1;
       break;
@@ -708,6 +721,14 @@ int main(int argc, char* argv[])
     }
   }
   is_mtp3d = 1;
+  if (do_fork) {
+    if (!freopen("/var/log/mtp3d.log", "a", stdout)) {
+      fprintf(stderr, "Cannot open /var/log/mtp3d.log for writing\n");
+      exit(1);
+    }
+    if (!freopen("/var/log/mtp3d.log", "a", stderr))
+      fprintf(stderr, "Cannot open /var/log/mtp3d.log for writing\n");
+  }
   printf("Using %s for config directory\n", ast_config_AST_CONFIG_DIR);
   if(load_config(0)) {
     return -1;
@@ -716,13 +737,14 @@ int main(int argc, char* argv[])
   signal(SIGPIPE, sigpipe);
   if (*dumpfn)
     setup_dump(dumpfn);
-  if (do_pid)
+  if (do_pid || do_fork)
     if (setup_daemon())
       return -1;
   if(mtp_init()) {
     ast_log(LOG_ERROR, "Unable to initialize MTP.\n");
     return -1;
   }
+  if (do_pid)
   make_pid_file();
   if(start_mtp_thread()) {
     ast_log(LOG_ERROR, "Unable to start MTP thread.\n");
