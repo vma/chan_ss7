@@ -44,6 +44,8 @@
 
 #undef inet_ntoa
 
+int mtp3_sockettype = MTP3_SOCKETTYPE;
+int mtp3_ipproto = MTP3_IPPROTO;
 
 
 static int setup_socket(int localport, int sockettype, int ipproto)
@@ -96,7 +98,7 @@ static int setup_socket(int localport, int sockettype, int ipproto)
 
 int mtp3_setup_socket(int port, int schannel)
 {
-  return setup_socket(port + schannel, MTP3_SOCKETTYPE, MTP3_IPPROTO);
+  return setup_socket(port + schannel, mtp3_sockettype, mtp3_ipproto);
 }
 
 
@@ -108,8 +110,8 @@ int mtp3_connect_socket(const char* host, const char* port)
 
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_INET;
-  hints.ai_socktype = MTP3_SOCKETTYPE;
-  hints.ai_protocol = MTP3_IPPROTO;
+  hints.ai_socktype = mtp3_sockettype;
+  hints.ai_protocol = mtp3_ipproto;
   res = getaddrinfo(host, port, NULL, &result);
   if (res != 0) {
     ast_log(LOG_ERROR, "Invalid hostname/IP address '%s' or port '%s': %s.\n", host, port, gai_strerror(res)
@@ -138,7 +140,7 @@ int mtp3_send(int s, const unsigned char* buff, unsigned int len)
 {
   int res;
   do {
-    res = write(s, buff, len);
+    res = send(s, buff, len, 0);
     if (res < 0) {
       if (errno != EINTR)
 	break;
@@ -178,6 +180,7 @@ int mtp3_register_isup(int s, int linkix)
 {
   unsigned char buff[MTP_REQ_MAX_SIZE];
   struct mtp_req* req = (struct mtp_req *)buff;
+  int res;
 
   req->isup.link = NULL;
   req->isup.slink = NULL;
@@ -185,7 +188,7 @@ int mtp3_register_isup(int s, int linkix)
   req->regist.ss7_protocol = SS7_PROTO_ISUP;
   req->regist.host_ix = this_host->host_ix;
   req->regist.linkix = linkix;
-  int res = write(s, buff, sizeof(*req));
+  res = send(s, buff, sizeof(*req), 0);
   if (res < 0) {
     ast_log(LOG_ERROR, "Cannot send mtp3 packet: %s\n", strerror(errno));
   }
@@ -197,6 +200,7 @@ int mtp3_register_sccp(int s, int subsystem, int linkix)
 {
   unsigned char buff[MTP_REQ_MAX_SIZE];
   struct mtp_req* req = (struct mtp_req *)buff;
+  int res;
 
   req->isup.link = NULL;
   req->isup.slink = NULL;
@@ -205,7 +209,7 @@ int mtp3_register_sccp(int s, int subsystem, int linkix)
   req->regist.host_ix = this_host->host_ix;
   req->regist.linkix = linkix;
   req->regist.sccp.subsystem = subsystem;
-  int res = write(s, buff, sizeof(*req));
+  res = send(s, buff, sizeof(*req), 0);
   if (res < 0) {
     ast_log(LOG_ERROR, "Cannot send mtp3 packet: %s\n", strerror(errno));
   }
