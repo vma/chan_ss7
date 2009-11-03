@@ -151,9 +151,6 @@ int adjust_buffers(int fd, int cic)
 
 int adjust_schannel_buffers(int fd, struct link* link, int ts, int bufcount, int bufsize)
 {
-  struct dahdi_bufferinfo bi;
-  int res;
-
   set_buffer_info(fd, link->first_cic+ts, bufcount, bufsize);
   ast_log(LOG_NOTICE, "Adjusting channels buffers for link %s/%d, size=%d, count=%d.\n", link->name, ts, bufsize, bufcount);
   return 1;
