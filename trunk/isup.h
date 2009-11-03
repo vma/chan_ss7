@@ -74,6 +74,7 @@ enum isup_parameter_code {
   IP_ECHO_CONTROL_INFORMATION = 0x37,                         /* (3.19) */
   IP_USER_SERVICE_INFORMATION = 0x1d,                         /* (3.57) */
   IP_ACCESS_TRANSPORT = 0x03,                                 /* (3.3) */
+  IP_GENERIC_NUMBER = 0xc0,                                   /* (3.26) */
 };
 
 #define PHONENUM_MAX 20
@@ -111,6 +112,13 @@ struct isup_range_and_status {
   unsigned char status[32];     /* Min. 2 and max. 256 status bits */
 };
 
+/* Possible values for generic number. */
+struct generic_number {
+  struct isup_phonenum dni;
+  struct isup_phonenum ani;
+  struct isup_phonenum rni;
+};
+
 /* Structure used to store decoded ISUP messages. */
 struct isup_msg {
   int dpc;                      /* Destination point code */
@@ -125,6 +133,7 @@ struct isup_msg {
       struct isup_phonenum ani;
       struct isup_phonenum rni;
       struct isup_redir_info redir_inf;
+      struct generic_number gni;
       int contcheck;
       int echocontrol;
       unsigned char trans_medium;
