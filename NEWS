@@ -6,10 +6,10 @@ Specfication for version 1.3
  - MTP2 (Q.703) implementation
  - MTP3 (Q.704) implementation (subset).
  - ISUP (Q.76x) implementation (mostly complete).
- - Supports Dahdi/Zaptel compatible digital interfaces, e.g. Redfone, Sangoma, Digium
+ - Supports Dahdi/Zaptel compatible digital interfaces, e.g. Redfone, Sangoma, Digium, Openvox
  - Facilities for MTP2 packet protocol analysis using e.g. wireshark/ethereal
  - Supports high call volumes
- - Supports multiple linksets with different DPCs
+ - Supports multiple linksets with different OPCs/DPCs
  - Supports linksets with multiple links.
  - Supports load sharing and MTP changeover.
  - Supports multiple hosts (cluster) configuration with load sharing and failover.
@@ -20,6 +20,8 @@ New in version 1.3
 - Support for multiple OPC (opc and dpc configuration settings now allowed in linkset section).
 - Support of hardware/driver HDLC and FCS and MTP2 mode.
 - New config parameter for link: stp, specifies STP point code.
+- Handling of generic numbers in IAM
+- Fixes for SCTP/IP
 
 New in version 1.2.1
 - Fix bug causing segmentation violation when using some cli commands
