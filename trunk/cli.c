@@ -489,7 +489,7 @@ void cli_handle(int fd, char* cmd)
   for (i = 0; i < sizeof(my_clis) / sizeof(my_clis[0]); i++) {
     int found = 1;
     for (j = 1; my_clis[i].cmda[j]; j++) {
-      if (strcmp(my_clis[i].cmda[j], argv[j])) {
+      if (!argv[j] || strcmp(my_clis[i].cmda[j], argv[j])) {
 	found = 0;
 	break;
       }
