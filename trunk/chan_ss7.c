@@ -251,33 +251,34 @@ static void *monitor_main(void *data) {
 	  }
 	}
 	else {
-#if MTP3_SOCKET == SOCK_STREAM
-	  res = read(fds[i].fd, eventbuf, sizeof(struct mtp_event));
-	  if ((res > 0) && (event->len > 0)) {
-	    int p = res;
-	    int len = event->len;
-	    if (sizeof(struct mtp_event) + event->len > MTP_EVENT_MAX_SIZE) {
-	      ast_log(LOG_NOTICE, "Got too large packet: len %lu, max %lu, discarded", sizeof(struct mtp_event) + event->len, MTP_EVENT_MAX_SIZE);
-	      len = 0;
-	      res = 0;
+	  if (mtp3_ipproto == IPPROTO_TCP) {
+	    res = read(fds[i].fd, eventbuf, sizeof(struct mtp_event));
+	    if ((res > 0) && (event->len > 0)) {
+	      int p = res;
+	      int len = event->len;
+	      if (sizeof(struct mtp_event) + event->len > MTP_EVENT_MAX_SIZE) {
+		ast_log(LOG_NOTICE, "Got too large packet: len %lu, max %lu, closing connection", sizeof(struct mtp_event) + event->len, MTP_EVENT_MAX_SIZE);
+		len = 0;
+		res = 0;
+		shutdown(fds[i].fd, SHUT_RD);
+	      }
+	      do {
+		res = read(fds[i].fd, &eventbuf[p], len);
+		if (res > 0) {
+		  p += res;
+		  len -= res;
+		}
+		else if ((res < 0) && (errno != EINTR)) {
+		  len = 0;
+		}
+		else {
+		  len = 0;
+		}
+	      } while (len > 0);
 	    }
-	    do {
-	      res = read(fds[i].fd, &eventbuf[p], len);
-	      if (res > 0) {
-		p += res;
-		len -= res;
-	      }
-	      else if ((res < 0) && (errno != EINTR)) {
-		len = 0;
-	      }
-	      else {
-		len = 0;
-	      }
-	    } while (len > 0);
 	  }
-#else
-	  res = read(fds[i].fd, eventbuf, sizeof(eventbuf)+MTP_MAX_PCK_SIZE);
-#endif
+	  else
+	    res = read(fds[i].fd, eventbuf, sizeof(eventbuf)+MTP_MAX_PCK_SIZE);
 	  if (res > 0) {
 	    if (event->typ == MTP_EVENT_ISUP) {
 	      event->isup.link = NULL;
@@ -307,6 +308,11 @@ static void *monitor_main(void *data) {
        is an atomic operation, so that we avoid calling timer handlers with
        references to invalidated channels. */
     run_timers();
+  }
+  for (i = 0; i < n_links; i++) {
+    struct link* link = &links[i];
+    if (link->remote && (link->mtp3fd != -1))
+      close(link->mtp3fd);
   }
   return NULL;
 }
