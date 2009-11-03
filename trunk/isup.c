@@ -548,6 +548,36 @@ static int decode_ani_rni(unsigned char *p, int len, void *data) {
   return decode_isup_phonenum(1, p, len, data);
 }
 
+/* Decode parameter 0xc0 "generic number" (Q.763 (3.26)). */
+static int decode_generic_number(unsigned char *p, int len, void *data) {
+  struct generic_number *gni = data;
+  unsigned char gnqi = *p;
+
+  if(len < 4) {
+    ast_log(LOG_NOTICE, "Short parameter 'generic number' len %d < 4.\n", len);
+    return 0;
+  }
+  p++; len--;
+  switch (gnqi) {
+  case 1: /* Additional called number (national use) */
+    return decode_isup_phonenum(1, p, len, &gni->dni);
+  case 4: /* Reserved for additional redirecting termination number (national use) */
+    return decode_isup_phonenum(1, p, len, &gni->rni);
+  case 5: /* Additional connected number */
+    return decode_isup_phonenum(1, p, len, &gni->dni);
+  case 6: /* Additional calling party number */
+    return decode_isup_phonenum(1, p, len, &gni->ani);
+  case 7: /* Reserved for additional original called number */
+  case 8: /* Reserved for additional redirecting number */
+  case 9: /* Reserved for additional redirection number */
+    ast_log(LOG_DEBUG, "Unhandled generic number qualifier indicator %d\n", gnqi);
+    break;
+  default:
+    ast_log(LOG_NOTICE, "Unknown/reserved generic number qualifier indicator %d\n", gnqi);
+  }
+  return 1;
+}
+
 /* Decode raw SIF field into ISUP message.
    Returns true on success, false on error. */
 int decode_isup_msg(struct isup_msg *msg, ss7_variant variant, unsigned char *buf, int len) {
@@ -605,6 +635,7 @@ int decode_isup_msg(struct isup_msg *msg, ss7_variant variant, unsigned char *bu
                           IP_CALLING_PARTY_NUMBER, decode_ani_rni, &msg->iam.ani,
                           IP_REDIRECTING_NUMBER, decode_ani_rni, &msg->iam.rni,
                           IP_REDIRECTION_INFORMATION, decode_redir_inf, &msg->iam.redir_inf,
+                          IP_GENERIC_NUMBER, decode_generic_number, &msg->iam.gni,
                           0);
 
     case ISUP_SAM:
