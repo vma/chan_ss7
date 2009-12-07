@@ -1,5 +1,5 @@
 /*  cli.c - chan_ss7/mtp3d cli interface
- * Author: Anders Baekgaard <ab@dicea.dk>
+ * Author: Anders Baekgaard <ab@netfors.com>
  * This work is derived from chan_ss7, see copyright below.
  */
 
@@ -286,7 +286,7 @@ static int cmd_link_up_down(int fd, int argc, char *argv[], int updown) {
     }
   }
   else {
-    for (i=0; i < this_host->n_schannels; i++) {
+    for (i=0; i < this_host->n_slinks; i++) {
       ast_log(LOG_DEBUG, "MTP control link %s %d\n", updown == MTP_REQ_LINK_UP ? "up" : "down", i);
       req->link.linkix = i;
       req->link.keepdown = 1;
@@ -311,8 +311,8 @@ static int cmd_link_status(int fd, int argc, char *argv[]) {
   char buff[8192];
   int i;
 
-  for (i = 0; i < this_host->n_schannels; i++) {
-    if (cmd_mtp_linkstatus(buff, i) == 0)
+  for (i = 0; i < this_host->n_slinks; i++) {
+    if (cmd_mtp_linkstatus(buff, argc>3, i) == 0)
       ast_cli(fd, "%s", buff);
   }
   return RESULT_SUCCESS;

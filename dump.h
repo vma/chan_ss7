@@ -1,5 +1,5 @@
 /* dump.h - chan_ss7/mtp3d dump
- * Author: Anders Baekgaard <ab@dicea.dk>
+ * Author: Anders Baekgaard <ab@netfors.com>
  * This work is derived from chan_ss7, see copyright below.
  */
 

@@ -1,5 +1,5 @@
 /* mtp3d.c - mtp2/mtp3 daemon
- * Author: Anders Baekgaard <ab@dicea.dk>
+ * Author: Anders Baekgaard <ab@netfors.com>
  * This work is derived from chan_ss7, see copyright below.
  */
 

@@ -3,7 +3,7 @@
  * Copyright (C) 2006, Sifira A/S.
  *
  * Author: Anders Baekgaard <ab@sifira.dk>
- *         Anders Baekgaard <ab@dicea.dk>
+ *         Anders Baekgaard <ab@netfors.com>
  *
  * This file is part of chan_ss7.
  *
@@ -40,6 +40,7 @@ typedef enum { BL_LM=1, BL_LH=2, BL_RM=4, BL_RH=8, BL_UNEQUIPPED=0x10, BL_LINKDO
 #define MAX_LINKS_PER_HOST 16
 #define MAX_SPANS_PER_HOST 16
 #define MAX_SCHANNELS 16
+#define MAX_SCHANNELS_PER_E1 16
 #define MAX_IFS_PER_HOST 2
 #define MAX_HOSTS 16
 #define MAX_ROUTES_PER_HOST 16
@@ -58,6 +59,7 @@ struct linkset {
   char* language;
   ss7_variant variant;
   char* combined;		/* combined linkset name */
+  int noa;			/* nature of address */
   loadshare_type loadshare;
   hunting_policy hunt_policy;
   int opc;
@@ -69,10 +71,11 @@ struct linkset {
   int t35_value;
   int t35_action;
   int lsi;
+  int n_slinks;
   int n_schannels;
   int dni_chunk_limit;
   int grs;
-  struct link* schannels[MAX_LINKS_PER_LINKSET];
+  struct link* slinks[MAX_LINKS_PER_LINKSET];
   int first_cic, last_cic;
   int init_grs_done;		/* GRS sent? */
   /* Global circuit list. Protected by glock. */
@@ -86,12 +89,14 @@ struct linkset {
 
 struct link {
   char* name;
-  int schannel;
+  struct {unsigned int mask;} schannel;
+  int n_schannels;
+  int slinkix;
   int remote;
   int first_zapid;
   unsigned long channelmask;
   int first_cic;
-  int sls;
+  int sls[MAX_SCHANNELS_PER_E1];
   int enabled;
   int send_sltm;
   int auto_block;
@@ -155,8 +160,8 @@ struct host {
     int connector;
   } spans[MAX_SPANS_PER_HOST];
 
-  int n_schannels;
-  struct link* schannels[MAX_LINKS_PER_HOST];
+  int n_slinks;
+  struct link* slinks[MAX_LINKS_PER_HOST];
 
   /* Receivers, per link */
   int n_receivers;

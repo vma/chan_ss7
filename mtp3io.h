@@ -1,5 +1,5 @@
 /* mtp3io.h - MTP transport over mtp3d sockets interface
- * Author: Anders Baekgaard <ab@dicea.dk>
+ * Author: Anders Baekgaard <ab@netfors.com>
  * This work is included with chan_ss7, see copyright below.
  */
 

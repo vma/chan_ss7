@@ -4,7 +4,7 @@
  *
  * Author: Kristian Nielsen <kn@sifira.dk>
  *         Anders Baekgaard <ab@sifira.dk>
- *         Anders Baekgaard <ab@dicea.dk>
+ *         Anders Baekgaard <ab@netfors.com>
  *
  * This file is part of chan_ss7.
  *

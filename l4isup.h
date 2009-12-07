@@ -3,7 +3,7 @@
  * Copyright (C) 2006, Sifira A/S.
  *
  * Author: Anders Baekgaard <ab@sifira.dk>
- *         Anders Baekgaard <ab@dicea.dk>
+ *         Anders Baekgaard <ab@netfors.com>
  * Based on work by: Kristian Nielsen <kn@sifira.dk>,
  *
  * This file is part of chan_ss7.

@@ -4,7 +4,7 @@
  *
  * Author: Kristian Nielsen <kn@sifira.dk>
  *         Anders Baekgaard <ab@sifira.dk>
- *         Anders Baekgaard <ab@dicea.dk>
+ *         Anders Baekgaard <ab@netfors.com>
  *
  * This file is part of chan_ss7.
  *
@@ -41,7 +41,7 @@ struct lffifo *mtp_get_control_fifo(void);
 void mtp3_put_label(int sls, ss7_variant variant, int opc, int dpc, unsigned char *buf);
 int mtp_has_inservice_schannels(struct link*);
 int mtp2_slink_inservice(int linkix);
-int cmd_mtp_linkstatus(char* buff, int timeslot);
+int cmd_mtp_linkstatus(char* buff, int details, int timeslot);
 int cmd_mtp_data(int fd, int argc, char *argv[]);
 int cmd_testfailover(int fd, int argc, char *argv[]);
 

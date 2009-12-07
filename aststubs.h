@@ -1,5 +1,5 @@
 /* aststubs.h - asterisk stubs
- * Author: Anders Baekgaard <ab@dicea.dk>
+ * Author: Anders Baekgaard <ab@netfors.com>
  * This work is included with chan_ss7, see copyright below.
  */
 

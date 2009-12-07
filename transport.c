@@ -1,5 +1,5 @@
 /* transport.c - MTP/audio transport
- * Author: Anders Baekgaard <ab@dicea.dk>
+ * Author: Anders Baekgaard <ab@netfors.com>
  * This work is included with chan_ss7, see copyright below.
  */
 
@@ -64,6 +64,7 @@
 #define DAHDI_SET_BLOCKSIZE ZT_SET_BLOCKSIZE
 #define DAHDI_SET_BUFINFO ZT_SET_BUFINFO
 #define DAHDI_SPECIFY ZT_SPECIFY
+#define DAHDI_GET_PARAMS ZT_GET_PARAMS
 #define dahdi_bufferinfo zt_bufferinfo
 #define dahdi_dialoperation zt_dialoperation
 #else
@@ -248,12 +249,12 @@ void flushchannel(int fd, int cic)
 }
 
 
-int openschannel(struct link* link, int* sigtype)
+int openschannel(struct link* link, int channel, int* sigtype)
 {
   struct dahdi_bufferinfo bi;
   struct dahdi_params params;
   int fd, res;
-  int zapid = link->schannel + link->first_zapid;
+  int zapid = channel + 1 + link->first_zapid;
 
   fd = opendev(zapid);
   if (fd < 0)
@@ -355,8 +356,9 @@ int io_send_dtmf(int fd, int cic, char digit)
 static int transport_socket(int localport, const char* remotehost, int remoteport);
 
 int openschannel(struct link* link, int* sigtype)
+int openschannel(struct link* link, int* sigtype)
 {
-  int id = link->schannel + link->first_zapid;
+  int id = channel + 1 + link->first_zapid;
   int i;
 
   *sigtype = 0;

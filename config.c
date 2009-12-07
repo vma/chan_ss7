@@ -3,7 +3,7 @@
  * Copyright (C) 2006, Sifira A/S.
  *
  * Author: Anders Baekgaard <ab@sifira.dk>
- *         Anders Baekgaard <ab@dicea.dk>
+ *         Anders Baekgaard <ab@netfors.com>
  *
  * This file is part of chan_ss7.
  *
@@ -166,7 +166,7 @@ struct host* lookup_host_by_id(int hostix)
   return &hosts[hostix];
 }
 
-static int make_host_schannels(void)
+static int make_host_slinks(void)
 {
   int k;
 
@@ -182,8 +182,10 @@ static int make_host_schannels(void)
     link->first_zapid = (connector-1) * 32 - (connector-1);
     if (link->enabled) {
       llink = link;
-      if ((link->schannel > 0) && (!link->remote))
-	this_host->schannels[this_host->n_schannels++] = link;
+      if ((link->schannel.mask != 0) && (!link->remote)) {
+	link->slinkix = this_host->n_slinks;
+	this_host->slinks[this_host->n_slinks++] = link;
+      }
     }
   }
   if (!llink) {
@@ -228,11 +230,12 @@ static int load_config_linkset(struct ast_config *cfg, const char* cat)
     ast_log(LOG_ERROR, "Too many linksets defined. Max %d\n", MAX_LINKSETS);
     return -1;
   }
+  linkset->n_slinks = 0;
+  linkset->n_schannels = 0;
   linkset->t35_value = 15000;
   linkset->t35_action = 0;
   linkset->context = NULL;
   linkset->language = NULL;
-  linkset->n_schannels = 0;
   linkset->opc = 0;
   linkset->dpc = 0;
   linkset->dni_chunk_limit = 0;
@@ -240,6 +243,7 @@ static int load_config_linkset(struct ast_config *cfg, const char* cat)
   linkset->inservice = 0;
   linkset->combined = 0;
   linkset->variant = ITU_SS7;
+  linkset->noa = -1;
   linkset->grs = 1;
   for (i = 0; i < MAX_CIC; i++)
     linkset->blocked[i] = 0;
@@ -317,6 +321,13 @@ static int load_config_linkset(struct ast_config *cfg, const char* cat)
 	return -1;
       }
       has_subservice = 1;
+    } else if(0 == strcasecmp(v->name, "noa")) {
+      if(sscanf(v->value, "0x%x", &linkset->noa) == 1) {}
+      else if(sscanf(v->value, "%d", &linkset->noa) == 1) {}
+      else {
+	ast_log(LOG_ERROR, "Invalid value '%s' for noa entry for linkset '%s'.\n", v->value, linkset_name);
+	return -1;
+      }
     } else if(0 == strcasecmp(v->name, "loadshare")) {
       if (strcasecmp(v->value, "none") == 0) {
 	linkset->loadshare = LOADSHARE_NONE;
@@ -456,9 +467,10 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
   char chan_spec_buf[1000] = {0,};
   struct linkset* linkset = NULL;
   struct link* link = &links[n_links];
+  int i;
   int lastcic = 0;
 
-  int has_linkset = 0, has_enabled = 0, has_firstcic = 0, has_channels = 0, has_schannel = 0;
+  int has_linkset = 0, has_enabled = 0, has_firstcic = 0, has_channels = 0, has_schannel = 0, has_sls = 0;
 
   if (lookup_link(link_name)) {
     ast_log(LOG_ERROR, "Links '%s' defined twice.\n", link_name);
@@ -469,6 +481,9 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
     return -1;
   }
 
+  link->schannel.mask = 0;
+  link->n_schannels = 0;
+  link->slinkix = -1;
   link->send_sltm = 1;
   link->auto_block = 0;
   /* Echo cancellation default values */
@@ -525,6 +540,33 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
 	return -1;
       }
       has_firstcic = 1;
+    } else if(0 == strcasecmp(v->name, "sls")) {
+      int n_sls = 0;
+      ast_copy_string(chan_spec_buf, v->value, sizeof(chan_spec_buf));
+      spec = &chan_spec_buf[0];
+      p = strsep(&spec, ",");
+      while(p && *p) {
+	int i, first, last;
+	if(sscanf(p, "%d-%d", &first, &last) == 2) {
+	  if (first < 0 || first > last || last > 31) {
+	    ast_log(LOG_DEBUG, "SLS range '%s' is %d %d \n", p, first,last);
+	    ast_log(LOG_ERROR, "Illegal SLS range '%s' for SLS specification for link '%s'.\n", p, link_name);
+	    return -1;
+	  }
+	}
+	else {
+	  if((sscanf(p, "%d", &first) != 1) || (first < 0) || (first > 31)) {
+	    ast_log(LOG_ERROR, "Illegal SLS value '%s' for SLS specification for link '%s'.\n", p, link_name);
+	    return -1;
+	  }
+	  last = first;
+	}
+	for (i = first; i <= last; i++) {
+	  link->sls[n_sls++] = i;
+	}
+	p = strsep(&spec, ",");
+      }
+      has_sls = 1;
     } else if(0 == strcasecmp(v->name, "channels")) {
       link->channelmask = 0;
       ast_copy_string(chan_spec_buf, v->value, sizeof(chan_spec_buf));
@@ -547,25 +589,40 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
       }
       has_channels = 1;
     } else if(0 == strcasecmp(v->name, "schannel")) {
-      link->schannel = -1;
       link->remote = 0;
+      spec = &chan_spec_buf[0];
       if (strcmp(v->value, "")) {
-	char host[128];
-	char port[128];
-	if(sscanf(v->value, "%d,%[^:]:%s", &link->schannel, host, port) == 3) {
+	if ((sscanf(v->value, "%[^@]@%[^:]:%s", chan_spec_buf, link->mtp3server_host, link->mtp3server_port) == 3) || (sscanf(v->value, "%[^@]@%[^:]", chan_spec_buf, link->mtp3server_host) == 2)) {
 	  if (!is_mtp3d)
 	    link->remote = 1;
-      
-	  strcpy(link->mtp3server_host, host);
-	  strcpy(link->mtp3server_port, port);
-
-	} else if(sscanf(v->value, "%d", &link->schannel) != 1) {
-	  ast_log(LOG_ERROR, "Invalid schannel entry '%s' for link '%s'.\n", v->value, link_name);
-	  return -1;
+	} else
+	  snprintf(chan_spec_buf, sizeof(chan_spec_buf), "%s", v->value);
+	p = strsep(&spec, ",");
+	while(p && *p) {
+	  int i, first, last;
+	  if(sscanf(p, "%d-%d", &first, &last) == 2) {
+	    if (first < 0 || first > last || last > 31) {
+	      ast_log(LOG_DEBUG, "Schannel range '%s' is %d %d \n", p, first,last);
+	      ast_log(LOG_ERROR, "Illegal schannel range '%s' for schannel specification for link '%s'.\n", p, link_name);
+	      return -1;
+	    }
+	  }
+	  else {
+	    if((sscanf(p, "%d", &first) != 1) || (first < 0) || (first > 31)) {
+	      ast_log(LOG_ERROR, "Illegal schannel value '%s' for schannel specification for link '%s'.\n", p, link_name);
+	      return -1;
+	    }
+	    last = first;
+	  }
+	  for (i = first; i <= last; i++)
+	    link->schannel.mask |= 1 << (i-1);
+	  p = strsep(&spec, ",");
 	}
+	for (i = 0; i < 32; i++)
+	  if (link->schannel.mask & (1 << i))
+	    link->n_schannels++;
       }
       has_schannel = 1;
-
     } else if(0 == strcasecmp(v->name, "echocancel")) {
       if (strcasecmp(v->value, "no") == 0) {
         link->echocancel = EC_DISABLED;
@@ -650,8 +707,12 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
     ast_log(LOG_ERROR, "Too many links defined for linkset '%s' for link '%s' (max %d).\n", linkset->name, link_name, MAX_LINKS_PER_LINKSET);
     return -1;
   }
+  if (!has_sls) {
+    int i;
+    for (i = 0; i < link->n_schannels; i++)
+      link->sls[i] = linkset->n_schannels + i;
+  }
   link->name = strdup(link_name);
-  link->sls = linkset->n_schannels;
   link->linkset = linkset;
   link->on_host = NULL;
   link->receiver = NULL;
@@ -659,8 +720,8 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
   if (link->enabled) {
     if (linkset->enabled) {
       linkset->links[linkset->n_links++] = link;
-      if (link->schannel != -1) {
-	linkset->schannels[linkset->n_schannels++] = link;
+      if (link->schannel.mask != 0) {
+	linkset->slinks[linkset->n_slinks++] = link;
       }
     }
     else {
@@ -700,7 +761,7 @@ static int load_config_host(struct ast_config *cfg, const char* cat)
   host->name = strdup(host_name);
   host->host_ix = n_hosts;
   host->default_linkset = NULL;
-  host->n_schannels = 0;
+  host->n_slinks = 0;
   host->n_peers = 0;
   host->ssn = 0;
   host->n_routes = 0;
@@ -1146,7 +1207,7 @@ int load_config(int reload)
     }
     this_host->default_linkset = linkset;
   }
-  if (make_host_schannels())
+  if (make_host_slinks())
     goto fail;
 
   show_config();

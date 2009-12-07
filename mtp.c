@@ -4,7 +4,7 @@
  *
  * Author: Kristian Nielsen <kn@sifira.dk>
  *         Anders Baekgaard <ab@sifira.dk>
- *         Anders Baekgaard <ab@dicea.dk>
+ *         Anders Baekgaard <ab@netfors.com>
  *
  * This file is part of chan_ss7.
  *
@@ -42,13 +42,14 @@
 #include "zaptel.h"
 #define FAST_HDLC_NEED_TABLES
 #include "fasthdlc.h"
-#define DAHDI_SIG_MTP2 ZT_SIG_MTP2
 #define DAHDI_EVENT_DIALCOMPLETE ZT_EVENT_DIALCOMPLETE
 #define DAHDI_DIALING ZT_DIALING
 #define DAHDI_GETGAINS ZT_GETGAINS
 #define DAHDI_SETGAINS ZT_SETGAINS
 #define DAHDI_LAW_ALAW ZT_LAW_ALAW
 #define DAHDI_LAW_MULAW ZT_LAW_MULAW
+#define DAHDI_SIG_MTP2 ZT_SIG_MTP2
+#define DAHDI_SIG_HDLCFCS ZT_SIG_HDLCFCS
 #else
 #include <dahdi/user.h>
 #define FAST_HDLC_NEED_TABLES
@@ -161,7 +162,6 @@ typedef struct mtp2_state {
 
   /* Timeslot for signalling channel */
   int schannel;
-  int slinkno;
   struct link* link;
   int sls;
   int subservice;
@@ -243,7 +243,7 @@ typedef struct mtp2_state {
 /* ToDo: Support more than one signalling link ... */
 /* ToDo: Need real initialization, that doesn't depend on linker. */
 mtp2_t mtp2_state[MAX_SCHANNELS];
-
+int n_mtp2_state;
 
 /* Get the next sequence number, modulo 128. */
 #define MTP_NEXT_SEQ(x) (((x) + 1) % 128)
@@ -299,25 +299,33 @@ int mtp2_slink_inservice(int ix) {
   return m->state == MTP2_INSERVICE;
 }
 
-int cmd_mtp_linkstatus(char* buff, int slinkno)
+int cmd_mtp_linkstatus(char* buff, int details, int slinkno)
 {
-  char* format = "linkset %s, link %s, schannel %d, sls %d, %s, rx: %d, tx: %d/%d, sentseq/lastack: %d/%d, total %9llu, %9llu\n";
+  char* format;
+  char r[1024];
+  int i;
 
   char* s = "?";
-  if (slinkno >= this_host->n_schannels)
+  if (slinkno >= this_host->n_slinks)
     return -1;
-  /* Todo: when more than one signalling link supported, check against that */
-  struct mtp2_state* m = &mtp2_state[slinkno];
-  switch (m->state) {
-  case MTP2_DOWN: s = "DOWN"; break;
-  case MTP2_NOT_ALIGNED: s = "NOT_ALIGNED"; break;
-  case MTP2_ALIGNED: s = "ALIGNED"; break;
-  case MTP2_PROVING: s = "PROVING"; break;
-  case MTP2_READY: s = "READY"; break;
-  case MTP2_INSERVICE: s = "INSERVICE"; break;
-  default: s = "UNKNOWN";
+  *buff = 0;
+  for (i = 0; i < n_mtp2_state; i++) {
+    if (mtp2_state[i].link != this_host->slinks[slinkno])
+      continue;
+    struct mtp2_state* m = &mtp2_state[i];
+    switch (m->state) {
+    case MTP2_DOWN: s = "DOWN"; break;
+    case MTP2_NOT_ALIGNED: s = "NOT_ALIGNED"; break;
+    case MTP2_ALIGNED: s = "ALIGNED"; break;
+    case MTP2_PROVING: s = "PROVING"; break;
+    case MTP2_READY: s = "READY"; break;
+    case MTP2_INSERVICE: s = "INSERVICE"; break;
+    default: s = "UNKNOWN";
+    }
+    format = "linkset %s, link %s/%d %s, sls %d, total: %6llu, %6llu\n";
+    sprintf(r, format, m->link->linkset->name, m->link->name, m->schannel+1, s, m->sls, m->readcount, m->writecount);
+    strcat(buff, r);
   }
-  sprintf(buff, format, m->link->linkset->name, m->link->name, m->schannel, m->sls, s, m->rx_len, m->tx_sofar, m->tx_len, m->retrans_last_sent, m->retrans_last_acked, (long long) m->readcount, (long long) m->writecount);
   return 0;
 }
 
@@ -352,7 +360,7 @@ int cmd_mtp_data(int fd, int argc, char *argv[])
 
 static inline int peeropc(mtp2_t* m)
 {
-  return m->link->linkset->dpc;
+  return m->link->linkset->opc;
 }
 
 
@@ -375,7 +383,7 @@ static mtp2_t* findtargetslink(mtp2_t *originalm, int sls)
   struct link* link = originalm->link;
   struct mtp2_state* bestm = NULL;
 
-  for (i = 0; i < this_host->n_schannels; i++) {
+  for (i = 0; i < n_mtp2_state; i++) {
     struct mtp2_state* m = &mtp2_state[i];
     struct link* slink = m->link;
     if (m->sls == sls) {
@@ -588,7 +596,7 @@ static void t4_start(mtp2_t *m) {
 static struct mtp2_state* get_inservice_schannel(struct link* link)
 {
   int i;
-   for (i = 0; i < this_host->n_schannels; i++) {
+   for (i = 0; i < n_mtp2_state; i++) {
     struct mtp2_state* m = &mtp2_state[i];
     if (m->state == MTP2_INSERVICE) {
       struct link* slink = m->link;
@@ -612,7 +620,7 @@ static void mtp_changeover(mtp2_t *m) {
   int i;
   int do_forward = 1;
 
-  for (i = 0; i < this_host->n_schannels; i++) {
+  for (i = 0; i < n_mtp2_state; i++) {
     struct mtp2_state* newm = &mtp2_state[i];
     if (&mtp2_state[i] == m)
       continue;
@@ -1431,8 +1439,10 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
 	      subservice = 0x8;
 
       mtp3_put_label(slc, variant(m), dpc, opc, message_slta);
-      if (slc != m->sls)
+      if (slc != m->sls) {
 	fifo_log(m, LOG_WARNING, "Got SLTM with unexpected sls=%d, OPC=%d DPC=%d on '%s/%d' sls=%d, state=%d.\n", slc, opc, dpc, m->name, m->schannel, m->sls, m->state);
+	//m->sls = slc;
+      }
       fifo_log(m, LOG_DEBUG, "Got SLTM, OPC=%d DPC=%d, sending SLTA '%s', state=%d.\n", opc, dpc, m->name, m->state);
       if(variant(m)==ITU_SS7) {
         message_slta[4] = 0x21;
@@ -1750,7 +1760,7 @@ void *mtp_thread_main(void *data) {
      the buffer-introduced write latency. This way the dump timings should
      approximately reflect the time that the last byte of the frame went
      out on the wire. */
-  for (i = 0; i < this_host->n_schannels; i++) {
+  for (i = 0; i < n_mtp2_state; i++) {
     m = &mtp2_state[i];
     m->readcount = 0;
     m->writecount = ZAP_BUF_SIZE;
@@ -1763,7 +1773,7 @@ void *mtp_thread_main(void *data) {
     struct timeval last;
     int tdiff;
 
-    for (i = 0; i < this_host->n_schannels; i++) {
+    for (i = 0; i < n_mtp2_state; i++) {
       m = &mtp2_state[i];
 #ifdef MTP_OVER_UDP
       if (0)
@@ -1814,13 +1824,13 @@ void *mtp_thread_main(void *data) {
     /* No need to calculate timeout with ast_sched_wait, as we will be
        woken up every 2 msec. anyway to read/write dahdi buffers. */
     gettimeofday(&last, NULL);
-    res = poll(fds, this_host->n_schannels, 20);
+    res = poll(fds, n_mtp2_state, 20);
 
     gettimeofday(&now, NULL);
     tdiff = timediff_usec(now, last);
 #ifndef MTP_OVER_UDP
     if (tdiff > 5000)
-      if (this_host->n_schannels)
+      if (n_mtp2_state)
 	fifo_log(m, LOG_NOTICE, "Excessive poll delay %d!\n", tdiff);//xxxx
 #endif
 
@@ -1833,7 +1843,7 @@ void *mtp_thread_main(void *data) {
       }
     } else if(res > 0) {
 
-      for (i = 0; i < this_host->n_schannels; i++) {
+      for (i = 0; i < n_mtp2_state; i++) {
 	if(fds[i].revents & POLLPRI) {
 	  mtp2_fetch_zap_event(&mtp2_state[i]);
 	}
@@ -1841,7 +1851,7 @@ void *mtp_thread_main(void *data) {
       /* Do the read before write, so that we can send any responses
          immediately (since we will usually/always also have a ready
          POLLOUT condition). */
-      for (i = 0; i < this_host->n_schannels; i++) {
+      for (i = 0; i < n_mtp2_state; i++) {
 	m = &mtp2_state[i];
 	if(fds[i].revents & POLLIN) {
 	  unsigned char buf[1024];
@@ -1883,7 +1893,7 @@ void *mtp_thread_main(void *data) {
 #endif
 	}
       }
-      for (i = 0; i < this_host->n_schannels; i++) {
+      for (i = 0; i < n_mtp2_state; i++) {
 	m = &mtp2_state[i];
 	if(fds[i].revents & POLLOUT) {
 	  unsigned char* buf;
@@ -1966,9 +1976,9 @@ void *mtp_thread_main(void *data) {
 	continue;
 #ifdef xxxx
       n_inservice = 0;
-      for (i = 0; i < this_host->n_schannels; i++) {
+      for (i = 0; i < n_mtp2_state; i++) {
 	struct mtp2_state* trym = &mtp2_state[last_send_ix];
-	last_send_ix = (last_send_ix + 1) % this_host->n_schannels;
+	last_send_ix = (last_send_ix + 1) % n_mtp2_state;
 	if (trym->link->linkset != &linksets[lsi])
 	  continue;
 	if (trym->state != MTP2_INSERVICE)
@@ -1982,9 +1992,9 @@ void *mtp_thread_main(void *data) {
 	   out-of-order). */
       }
       if (!n_inservice) {
-	for (i = 0; i < this_host->n_schannels; i++) {
+	for (i = 0; i < n_mtp2_state; i++) {
 	  struct mtp2_state* trym = &mtp2_state[last_send_ix];
-	  last_send_ix = (last_send_ix + 1) % this_host->n_schannels;
+	  last_send_ix = (last_send_ix + 1) % n_mtp2_state;
 	  if (!is_combined_linkset(trym->link->linkset, &linksets[lsi]))
 	    continue;
 	  if (trym->state != MTP2_INSERVICE)
@@ -2016,16 +2026,6 @@ void *mtp_thread_main(void *data) {
 	    mtp3_set_sls(variant(m), m->sls, req->buf); // xxx is this necessary?
 	    fifo_log(m, LOG_DEBUG, "Queue MSU, lsi=%d, last_send_ix=%d, linkset=%s, m->link=%s\n", lsi, last_send_ix, linksets[lsi].name, m->link->name);
 	    mtp2_queue_msu(m, subservice, req->buf, req->len);
-#if 1
-	    if (testfailover) {
-	      int tx_len = m->retrans_buf[m->retrans_last_sent].len;
-	      close(m->fd);
-	      m->fd = -1;
-	      fds[m->slinkno].fd = -1;
-	      testfailover = 0;
-	      fifo_log(m, LOG_DEBUG, "Closing link with tx_len %d, on link '%s'\n", tx_len, m->name);
-	    }
-#endif
 	  }
 	    break;
 	  case MTP_REQ_SCCP: {
@@ -2084,7 +2084,7 @@ void *mtp_thread_main(void *data) {
     }
     while ((res = lffifo_get(controlbuf, fifobuf, sizeof(fifobuf))) != 0) {
       int linkix = 0;
-      if (!this_host->n_schannels)
+      if (!n_mtp2_state)
 	continue; // No MTP signalling channels available, ignore control requests
       m = &mtp2_state[0];
       if(res < 0) {
@@ -2182,7 +2182,7 @@ void mtp_cleanup(void) {
   }
 
   if (this_host)
-    for (i = 0; i < this_host->n_schannels; i++) {
+    for (i = 0; i < n_mtp2_state; i++) {
       mtp_cleanup_link(&mtp2_state[i]);
     }
 }
@@ -2197,7 +2197,6 @@ static void mtp_init_link_data(struct mtp2_state* m) {
   m->send_sltm = 0;
 
   m->schannel = -1;
-  m->slinkno = -1;
   m->link = NULL;
 
   m->fd = -1;
@@ -2236,13 +2235,13 @@ static void mtp_init_link_data(struct mtp2_state* m) {
   m->mtp3_t17 = -1;
 }
 
-static int mtp_init_link(struct mtp2_state* m, struct link* link, int slinkno) {
+static int mtp_init_link(struct mtp2_state* m, struct link* link, int schannel, int sls) {
   int sigtype;
   int pcbits = (link->linkset->variant == ITU_SS7) ? 14 : 24;
   mtp_init_link_data(m);
   m->link = link;
   link->mtp = m;
-  fifo_log(m, LOG_DEBUG, "init link %s, linkset %s, schannel %d.\n", link->name, link->linkset->name, link->schannel);
+  fifo_log(m, LOG_NOTICE, "Initialising link '%s/%d', linkset '%s', sls %d.\n", link->name, schannel+1, link->linkset->name, sls);
   if(peeropc(m) < 0 || peeropc(m) >= (1<<24)) { 
     ast_log(LOG_ERROR, "Invalid value 0x%x for OPC.\n", peeropc(m));
     return -1;
@@ -2252,16 +2251,15 @@ static int mtp_init_link(struct mtp2_state* m, struct link* link, int slinkno) {
     goto fail;
   }
   m->send_sltm = link->send_sltm;
-  m->schannel = link->schannel;
-  m->slinkno = slinkno;
-  m->sls = link->sls;
+  m->schannel = schannel;
+  m->sls = sls;
   m->subservice = link->linkset->subservice;
   m->name = link->name;
 
-  m->fd = openschannel(link, &sigtype);
+  m->fd = openschannel(link, schannel, &sigtype);
   if (m->fd < 0)
     goto fail;
-  fifo_log(m, LOG_NOTICE, "Signalling channel on link '%s/%d' has signalling type 0x%04x.\n", link->name, slinkno, sigtype);
+  fifo_log(m, LOG_NOTICE, "Signalling channel on link '%s/%d' has signalling type 0x%04x.\n", link->name, schannel+1, sigtype);
   memset(m->backbuf, 0, sizeof(m->backbuf));
   m->backbuf_idx = 0;
   m->rx_len = 0;
@@ -2293,7 +2291,7 @@ static int mtp_init_link(struct mtp2_state* m, struct link* link, int slinkno) {
 
 
 int mtp_init(void) {
-  int i;
+  int i, n;
   int flags;
   int res;
 
@@ -2362,16 +2360,24 @@ int mtp_init(void) {
     goto fail;
   }
 
-  ast_log(LOG_NOTICE, "Initialising %d signalling links\n", this_host->n_schannels);
-  if (this_host->n_schannels > MAX_SCHANNELS) {
-    ast_log(LOG_ERROR, "Too many signalling channels: %d, max %d\n", this_host->n_schannels, MAX_SCHANNELS);
-    goto fail;
-  }
-  if (this_host->n_schannels) {
-    for (i = 0; i < this_host->n_schannels; i++) {
-      res = mtp_init_link(&mtp2_state[i], this_host->schannels[i], i);
-      if (res)
-	goto fail;
+  ast_log(LOG_NOTICE, "Initialising %d signalling links\n", this_host->n_slinks);
+  if (this_host->n_slinks) {
+    for (i = 0; i < this_host->n_slinks; i++) {
+      int j;
+      n = 0;
+      for (j = 0; j < 32; j++) {
+	if (this_host->slinks[i]->schannel.mask & (1<<j)) {
+	  if (n_mtp2_state >= MAX_SCHANNELS) {
+	    ast_log(LOG_ERROR, "Too many signalling channels: %d, max %d\n", n_mtp2_state, MAX_SCHANNELS);
+	    goto fail;
+	  }
+	  res = mtp_init_link(&mtp2_state[n_mtp2_state], this_host->slinks[i], j, this_host->slinks[i]->sls[n]);
+	  n_mtp2_state++;
+	  n++;
+	  if (res)
+	    goto fail;
+	}
+      }
     }
   }
   else {
