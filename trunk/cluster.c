@@ -301,7 +301,7 @@ int cluster_receivers_alive(struct linkset* linkset)
 	  continue;
 	for (l = 0; l < host->n_spans; l++) {
 	  struct link* link = host->spans[l].link;
-	  if (link->schannel >= 0)
+	  if (link->schannel.mask)
 	    return 1;
 	}
       }
@@ -831,7 +831,7 @@ int cluster_init(void (*isup_event_handler_callback)(struct mtp_event*),
       int l;
       for (l = 0; l < host->n_spans; l++) {
 	struct link* link = host->spans[l].link;
-	if (link->schannel >= 0)
+	if (link->schannel.mask)
 	  this_host->has_signalling_receivers = 1;
       }
     }

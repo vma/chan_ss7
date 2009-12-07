@@ -1,7 +1,7 @@
 /* aststubs.c - asterisk stubs
  * Copyright (C) 2007, Anders Baekgaard
  *
- * Author: Anders Baekgaard <ab@dicea.dk>
+ * Author: Anders Baekgaard <ab@netfors.com>
  * This work is included with chan_ss7, see copyright below.
  */
 

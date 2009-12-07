@@ -1,6 +1,6 @@
 /*
- * Copyright (C) 2007, Dicea ApS
- * Anders Baekgaard <ab@dicea.dk>
+ * Copyright (C) 2007, Netfors
+ * Anders Baekgaard <ab@netfors.com>
  */
 
 /* This version is released as part of chan_ss7. See LICENSE file */

@@ -13,7 +13,7 @@ INCLUDE+=-I../source/telephony/asterisk/include
 
 CC=gcc
 CFLAGS+=$(INCLUDE) -g -pipe -Wall -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -D_REENTRANT -D_GNU_SOURCE -DPIC -fpic  -finline-functions
-CFLAGS+=-O4
+#CFLAGS+=-O4
 #CFLAGS+=-pg
 CFLAGS+=-DCHAN_SS7_VERSION=\"$(VERSION)\"
 #CFLAGS+=-DMTP_OVER_UDP
@@ -150,8 +150,8 @@ ss7-isup-$(VERSION).tar.gz: instdir/lib/modules/chan_ss7.so \
 	tar -c  --transform='s,instdir/,$(INSTALL_PREFIX)/,' --owner=root --group=root  -zf $@ $^
 
 web: chan_ss7-$(VERSION).tar.gz NEWS
-	cp -p chan_ss7-$(VERSION).tar.gz /home/web/sites/dicea/download/chan_ss7-$(VERSION).tar.gz
-	cp -p NEWS                       /home/web/sites/dicea/download/NEWS-$(VERSION).txt
+	cp -p chan_ss7-$(VERSION).tar.gz /srv/apache/sites/netfors/media/download/chan_ss7-$(VERSION).tar.gz
+	cp -p NEWS                       /srv/apache/sites/netfors/media/download/NEWS-$(VERSION).txt
 
 instdir/sbin/mtp3d: mtp3d
 	install -D -m 755 $^ $@

@@ -1,5 +1,5 @@
 /* mtp3d.c - mtp2/mtp3 daemon
- * Author: Anders Baekgaard <ab@dicea.dk>
+ * Author: Anders Baekgaard <ab@netfors.com>
  * This work is derived from chan_ss7, see copyright below.
  */
 
@@ -344,17 +344,19 @@ static void mtp_mainloop(void)
 
   ast_verbose(VERBOSE_PREFIX_3 "Starting mtp mainloop, pid=%d.\n", getpid());
 
-  for (i = 0; i < this_host->n_schannels; i++) {
-    struct link* link = this_host->schannels[i];
+  for (i = 0; i < this_host->n_slinks; i++) {
+    struct link* link = this_host->slinks[i];
     if (strcmp(link->mtp3server_host, this_host->name) == 0) {
-      port = atoi(link->mtp3server_port);
-      link->mtp3fd = mtp3_setup_socket(port, 0);
-      if (link->mtp3fd == -1) {
-        ast_log(LOG_ERROR, "Could not setup mtp3 listen port %d, %d:%s\n", port, errno, strerror(errno));
-	return;
+      if (*link->mtp3server_port) {
+	port = atoi(link->mtp3server_port);
+	link->mtp3fd = mtp3_setup_socket(port, 0);
+	if (link->mtp3fd == -1) {
+	  ast_log(LOG_ERROR, "Could not setup mtp3 listen port %d, %d:%s\n", port, errno, strerror(errno));
+	  return;
+	}
+	printf("Using mtp3 service port %d, socket %d\n", port, link->mtp3fd);
+	n_listen++;
       }
-      printf("Using mtp3 service port %d, socket %d\n", port, link->mtp3fd);
-      n_listen++;
     }
   }
   if (!n_listen) {

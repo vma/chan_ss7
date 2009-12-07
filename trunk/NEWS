@@ -1,5 +1,5 @@
-This is the NEWS for chan_ss7. This version is maintained by Anders Baekgaard (ab@dicea.dk).
-Please send bug reports, feature requests etc. to chan_ss7@dicea.dk.
+This is the NEWS for chan_ss7. This version is maintained by Anders Baekgaard (ab@netfors.com).
+Please send bug reports, feature requests etc. to chan_ss7@netfors.com.
 
 Specfication for version 1.3
  - Compatible with Asterisk 1.2.x, 1.4.x and 1.6.x.
@@ -22,6 +22,8 @@ New in version 1.3
 - New config parameter for link: stp, specifies STP point code.
 - Handling of generic numbers in IAM
 - Fixes for SCTP/IP
+- Support for multiple signaling time slots on one E1 (schannel and sls config parameters)
+- New config option for linkset: noa. Specify NOA for called party.
 
 New in version 1.2.1
 - Fix bug causing segmentation violation when using some cli commands

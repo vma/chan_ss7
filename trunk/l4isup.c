@@ -3,7 +3,7 @@
  * Copyright (C) 2006, Sifira A/S.
  *
  * Author: Anders Baekgaard <ab@sifira.dk>
- *         Anders Baekgaard <ab@dicea.dk>
+ *         Anders Baekgaard <ab@netfors.com>
  * Based on work by: Kristian Nielsen <kn@sifira.dk>,
  *
  * This file is part of chan_ss7.
@@ -194,8 +194,8 @@ static struct timeval now;
 static struct timeval mtp_fifo_full_report;
 
 /* used by moduletest.c */
-int isup_called_party_num_encode(char *number, unsigned char *param, int plen);
-int isup_called_party_num_encode_no_st(char *number, unsigned char *param, int plen);
+int isup_called_party_num_encode(struct ss7_chan *pvt, char *number, unsigned char *param, int plen);
+int isup_called_party_num_encode_no_st(struct ss7_chan *pvt, char *number, unsigned char *param, int plen);
 int isup_calling_party_num_encode(char *number, int pres_restr, int si, unsigned char *param, int plen);
 
 static pthread_t continuity_check_thread = AST_PTHREADT_NULL;
@@ -378,34 +378,34 @@ static void mtp_enqueue_isup_packet(struct link* link, int cic, unsigned char *m
   }
   switch (link->linkset->loadshare) {
   case LOADSHARE_NONE:
-    if (link->schannel != -1)
+    if (!link->schannel.mask)
       slink = link;
     break;
   case LOADSHARE_LINKSET:
-    if (linkset->n_schannels)
-      slink = linkset->schannels[cic % linkset->n_schannels];
+    if (linkset->n_slinks)
+      slink = linkset->slinks[cic % linkset->n_slinks];
     break;
   case LOADSHARE_COMBINED_LINKSET:
     {
-      int n_schannels = 0;
-      int schannel;
+      int n_slinks = 0;
+      int six;
       for (lsi = 0; lsi < n_linksets; lsi++)
 	if (linksets[lsi].enabled)
 	  if (&linksets[lsi] == linkset || 
 	      (is_combined_linkset(linkset, &linksets[lsi])))
-	    n_schannels += linksets[lsi].n_schannels;
-      if (n_schannels) {
-	schannel = cic % n_schannels;
-	n_schannels = 0;
+	    n_slinks += linksets[lsi].n_slinks;
+      if (n_slinks) {
+	six = cic % n_slinks;
+	n_slinks = 0;
 	for (lsi = 0; lsi < n_linksets; lsi++)
 	  if (linksets[lsi].enabled)
 	    if (&linksets[lsi] == linkset || 
 		(is_combined_linkset(linkset, &linksets[lsi]))) {
-	      if (schannel - n_schannels < linksets[lsi].n_schannels) {
-		slink = linksets[lsi].schannels[schannel - n_schannels];
+	      if (six - n_slinks < linksets[lsi].n_slinks) {
+		slink = linksets[lsi].slinks[six - n_slinks];
 		break;
 	      }
-	      n_schannels += linksets[lsi].n_schannels;
+	      n_slinks += linksets[lsi].n_slinks;
 	    }
       }
     }
@@ -1753,7 +1753,7 @@ static int isup_phonenum_digits(char *number, int add_st,
 
 /* Encode a phone number in ISUP "Called Party Number" format. (Q.763 (3.9))
    Returns encoded length on success, -1 on error. */
-int isup_called_party_num_encode(char *number, unsigned char *param,
+int isup_called_party_num_encode(struct ss7_chan *pvt, char *number, unsigned char *param,
 				 int plen) {
   int nlen;
   int is_odd;
@@ -1775,7 +1775,11 @@ int isup_called_party_num_encode(char *number, unsigned char *param,
     return -1;
   }
 
-  param[0] = (is_odd << 7) | (is_international ? 4 : 3);
+  param[0] = (is_odd << 7);
+  if (pvt->link->linkset->noa != -1)
+    param[0] |= (pvt->link->linkset->noa & 0x7f);
+  else
+    param[0] |= (is_international ? 4 : 3);
   param[1] = 0x10; /* Internal routing allowed, ISDN number plan */
 
   if(isup_phonenum_digits(number, 1, nlen, param) == -1) {
@@ -1786,7 +1790,7 @@ int isup_called_party_num_encode(char *number, unsigned char *param,
 
 /* Encode a phone number in ISUP "Called Party Number" format. (Q.763 (3.9))
    Returns encoded length on success, -1 on error. */
-int isup_called_party_num_encode_no_st(char *number, unsigned char *param,
+int isup_called_party_num_encode_no_st(struct ss7_chan *pvt, char *number, unsigned char *param,
 				       int plen) {
   int nlen;
   int is_odd;
@@ -1808,7 +1812,11 @@ int isup_called_party_num_encode_no_st(char *number, unsigned char *param,
     return -1;
   }
 
-  param[0] = (is_odd << 7) | (is_international ? 4 : 3);
+  param[0] = (is_odd << 7);
+  if (pvt->link->linkset->noa != -1)
+    param[0] |= (pvt->link->linkset->noa & 0x7f);
+  else
+    param[0] |= (is_international ? 4 : 3);
   param[1] = 0x10; /* Internal routing allowed, ISDN number plan */
 
   if(isup_phonenum_digits(number, 0, nlen, param) == -1) {
@@ -1860,9 +1868,9 @@ static int isup_send_sam(struct ss7_chan *pvt, char* addr, int complete)
 
   isup_msg_init(msg, sizeof(msg), variant(pvt), peeropc(pvt), peerdpc(pvt), pvt->cic, ISUP_SAM, &current);
   if (complete)
-    res = isup_called_party_num_encode(addr, param, sizeof(param));
+    res = isup_called_party_num_encode(pvt, addr, param, sizeof(param));
   else
-    res = isup_called_party_num_encode_no_st(addr, param, sizeof(param));
+    res = isup_called_party_num_encode_no_st(pvt, addr, param, sizeof(param));
   isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 1, 0);
   /* Param index 1 not used with SAM, change it */
   param[1] = param[0]; res--;
@@ -1938,9 +1946,9 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
     /* Make part of dni */
     strncpy(dnicpy, dni, dnilimit);
     dnicpy[dnilimit] = '\0';
-    res = isup_called_party_num_encode_no_st(dnicpy, param, sizeof(param));
+    res = isup_called_party_num_encode_no_st(pvt, dnicpy, param, sizeof(param));
   } else {
-    res = isup_called_party_num_encode(dni, param, sizeof(param));
+    res = isup_called_party_num_encode(pvt, dni, param, sizeof(param));
   }
 
   if(res < 0) {
@@ -4030,7 +4038,7 @@ static int do_group_circuit_block_unblock(struct linkset* linkset, int firstcic,
 	pvt = linkset->cic_list[firstcic+p];
 	if (pvt) {
 	  struct link* link = pvt->link;
-	  if ((firstcic - link->first_cic + p + 1 == link->schannel))
+	  if ((1<<(firstcic - link->first_cic + p)) & link->schannel.mask)
 	    continue;
 	}
 	if (own_cics_only)
@@ -4072,7 +4080,7 @@ static int do_group_circuit_block_unblock(struct linkset* linkset, int firstcic,
         pvt = linkset->cic_list[firstcic+p];
         if (pvt) {
           struct link* link = pvt->link;
-          if ((firstcic - link->first_cic + p + 1 == link->schannel))
+          if ((1<<(firstcic - link->first_cic + p)) & link->schannel.mask)
             continue;
         }
         if (own_cics_only)
@@ -4199,6 +4207,7 @@ int cmd_linestat(int fd, int argc, char *argv[]) {
 	char* rh = "";
 	char* ue = "";
 	char* ld = "";
+	char* nu = "";
 	if (pvt->blocked & BL_LM)
           lm =" Local Maintenance";
 	if (pvt->blocked & BL_LH)
@@ -4211,7 +4220,9 @@ int cmd_linestat(int fd, int argc, char *argv[]) {
           ue =" Unequipped CIC";
 	if (pvt->blocked & BL_LINKDOWN)
           ld =" Link down";
-	sprintf(blbuf, "  BLOCKED%s%s%s%s%s%s", lm, lh, rm, rh, ue, ld);
+	if (pvt->blocked & BL_NOUSE)
+          nu =" Local NoUse";
+	sprintf(blbuf, "  BLOCKED%s%s%s%s%s%s%s", lm, lh, rm, rh, ue, ld, nu);
       }
       switch (pvt->state) {
       case ST_IDLE:
@@ -4702,7 +4713,7 @@ int isup_init(void) {
     int c;
     if (!link->enabled)
       continue;
-    ast_log(LOG_DEBUG, "New CIC, first_zapid %d, channelmask 0x%08lx, connector %d, firstcic %d, schannel %d \n", link->first_zapid, link->channelmask, connector, firstcic, link->schannel);
+    ast_log(LOG_DEBUG, "New CIC, first_zapid %d, channelmask 0x%08lx, connector %d, firstcic %d, schannel 0x%04x \n", link->first_zapid, link->channelmask, connector, firstcic, link->schannel.mask);
     for (c = 0; c < 31; c++) {
       if (link->channelmask & (1 << c)) {
 	int cic = firstcic + c;
@@ -4715,9 +4726,9 @@ int isup_init(void) {
 	   96-> none
 	   97 -> 94, 98 -> 95, 99 -> 96, ...
 	   128-> none */
-	if (c+1 == link->schannel) {
+	if ((1<<c) & link->schannel.mask) {
 	  ast_log(LOG_ERROR, "Error: Zap channel %d is used for SS7 signalling, "
-		  "hence cannot be allocated for a CIC.\n", link->schannel);
+		  "hence cannot be allocated for a CIC.\n", c+1);
 	  return -1;
 	}
 	if(link->linkset->cic_list[cic] != NULL) {
