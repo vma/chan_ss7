@@ -373,7 +373,7 @@ static void mtp_enqueue_isup_packet(struct link* link, int cic, unsigned char *m
 
   if(sizeof(struct mtp_req) + msglen > sizeof(req_buf)) {
     ast_log(LOG_ERROR, "Attempt to send oversized ISUP message of len "
-            "%d > %lu.\n", msglen, sizeof(req_buf) - sizeof(struct mtp_req));
+            "%d > %zu.\n", msglen, sizeof(req_buf) - sizeof(struct mtp_req));
     return;
   }
   switch (link->linkset->loadshare) {
@@ -4555,7 +4555,7 @@ static int setup_cic(struct link* link, int channel)
 
   pvt = malloc(sizeof(*pvt));
   if(pvt == NULL) {
-    ast_log(LOG_ERROR, "Out of memory allocating %lu bytes.\n", sizeof(*pvt));
+    ast_log(LOG_ERROR, "Out of memory allocating %zu bytes.\n", sizeof(*pvt));
     return -1;
   }
   init_pvt(pvt, cic);
@@ -4757,7 +4757,7 @@ int isup_init(void) {
 	if (link->channelmask & (1 << c)) {
 	  pvt = malloc(sizeof(*pvt));
 	  if(pvt == NULL) {
-	    ast_log(LOG_ERROR, "Out of memory allocating %lu bytes.\n", sizeof(*pvt));
+	    ast_log(LOG_ERROR, "Out of memory allocating %zu bytes.\n", sizeof(*pvt));
 	    return -1;
 	  }
 	  init_pvt(pvt, cic);

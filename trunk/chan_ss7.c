@@ -257,7 +257,7 @@ static void *monitor_main(void *data) {
 	      int p = res;
 	      int len = event->len;
 	      if (sizeof(struct mtp_event) + event->len > MTP_EVENT_MAX_SIZE) {
-		ast_log(LOG_NOTICE, "Got too large packet: len %lu, max %lu, closing connection", sizeof(struct mtp_event) + event->len, MTP_EVENT_MAX_SIZE);
+		ast_log(LOG_NOTICE, "Got too large packet: len %zu, max %zu, closing connection", sizeof(struct mtp_event) + event->len, MTP_EVENT_MAX_SIZE);
 		len = 0;
 		res = 0;
 		shutdown(fds[i].fd, SHUT_RD);

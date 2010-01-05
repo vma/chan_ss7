@@ -32,6 +32,14 @@ subservice => auto
 ; SS7 variant, either ITU or CHINA
 ;variant => ITU
 
+; The point code for this SS7 signalling point is 0x8e0
+; If point code is included here, it must not occur in host section
+;opc => 0x8e0
+
+; The destination point (peer) code is 0x3fff for linkset siuc
+; If point code is included here, it must not occur in host section
+;dpc => siuc:0x3fff
+
 [link-l1]
 
 ; This link belongs to linkset siuc
@@ -66,6 +74,9 @@ txgain => 0.0
 ; Relax DTMF, yes or no
 
 relaxdtmf => no
+
+; If link is connected to an STP with point code 0x3ff0, the following may be needed
+stp => 0x3ff0
 
 [host-gentoo1]
 ; chan_ss7 auto-configures by matching the machines host name with the host-<name>
