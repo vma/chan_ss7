@@ -355,8 +355,7 @@ int io_send_dtmf(int fd, int cic, char digit)
 #define MTPPORT 11000
 static int transport_socket(int localport, const char* remotehost, int remoteport);
 
-int openschannel(struct link* link, int* sigtype)
-int openschannel(struct link* link, int* sigtype)
+int openschannel(struct link* link, int channel, int* sigtype)
 {
   int id = channel + 1 + link->first_zapid;
   int i;
