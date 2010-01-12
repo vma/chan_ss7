@@ -12,7 +12,7 @@
 # Description: mtp3d is an mtp3 daemon
 ### END INIT INFO
 
-PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/ss7/sbin
 NAME=mtp3d
 DESC="mtp3d"
 INSTALL_PREFIX=/usr/local/ss7

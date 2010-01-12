@@ -2708,7 +2708,7 @@ static void process_circuit_message(struct link* slink,
       pvt->reset_done = 1;
       t16_clear(pvt);
     }
-    else if (inmsg->typ != ISUP_RSC) {
+    else if ((inmsg->typ != ISUP_RSC) && (inmsg->typ != ISUP_BLK) && (inmsg->typ != ISUP_UBL)) {
       if ((pvt->state != ST_SENT_REL) || (inmsg->typ != ISUP_RLC)) {
 	ast_log(LOG_WARNING, "Reset still in progress for CIC=%d, typ=%s, state=%d "
 		"message discarded.\n", cic, isupmsg(inmsg->typ), pvt->state);
@@ -3071,7 +3071,7 @@ static void process_cpr(struct ss7_chan *pvt, struct isup_msg *inmsg)
 static void process_rlc(struct ss7_chan *pvt, struct isup_msg *inmsg)
 {
   ast_log(LOG_DEBUG, "Process RLC CIC=%d, state=%d, reset_done %d\n", pvt->cic, pvt->state, pvt->reset_done);
-  if (!pvt->reset_done && ((pvt->state == ST_SENT_REL) || (pvt->state == ST_SENT_REL))) {
+  if (!pvt->reset_done && (pvt->state == ST_SENT_REL)) {
     /* Sent a reset circuit message */
     t16_clear(pvt);
     pvt->state = ST_IDLE;
