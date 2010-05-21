@@ -636,14 +636,25 @@ static void sigpipe(int p)
 {
 }
 
+static void setsigactions(void)
+{
+  struct sigaction sa;
+
+  sigemptyset (&sa.sa_mask);
+  sa.sa_flags = 0;
+  sa.sa_handler= sigterm;
+  sigaction(SIGTERM, &sa, NULL);
+  sa.sa_handler= sigpipe;
+  sigaction(SIGPIPE, &sa, NULL);
+}
+
 static int setup_daemon(void)
 {
   if (do_fork) {
     if (!daemon(0, 1))
       fprintf(stderr, "daemon returned error: %d: %s\n", errno, strerror(errno));
   }
-  signal(SIGTERM, sigterm);
-  signal(SIGPIPE, sigpipe);
+  setsigactions();
   return 0;
 }
 
@@ -735,8 +746,7 @@ int main(int argc, char* argv[])
   if(load_config(0)) {
     return -1;
   }
-  signal(SIGTERM, sigterm);
-  signal(SIGPIPE, sigpipe);
+  setsigactions();
   if (*dumpfn)
     setup_dump(dumpfn);
   if (do_pid || do_fork)

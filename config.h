@@ -32,13 +32,13 @@ typedef enum { HUNT_ODD_LRU, HUNT_EVEN_MRU, HUNT_SEQ_LTH, HUNT_SEQ_HTL } hunting
 typedef enum { BL_LM=1, BL_LH=2, BL_RM=4, BL_RH=8, BL_UNEQUIPPED=0x10, BL_LINKDOWN=0x20, BL_NOUSE=0x40 } block;
 
 /* Upper bounds only determined by installed hardware, use decent values */
-#define MAX_E1_CONNECTOR_NO 16
+#define MAX_E1_CONNECTOR_NO 32
 #define MAX_CIC 4096
 #define MAX_LINKSETS 8
 #define MAX_LINKS 128
 #define MAX_LINKS_PER_LINKSET 16
-#define MAX_LINKS_PER_HOST 16
-#define MAX_SPANS_PER_HOST 16
+#define MAX_LINKS_PER_HOST 32
+#define MAX_SPANS_PER_HOST 32
 #define MAX_SCHANNELS 16
 #define MAX_SCHANNELS_PER_E1 16
 #define MAX_IFS_PER_HOST 2
@@ -51,6 +51,10 @@ enum {EC_DISABLED, EC_ALLWAYS, EC_31SPEECH};
 typedef enum {STATE_UNKNOWN, STATE_ALIVE, STATE_DEAD} alivestate;
 typedef enum {LOADSHARE_NONE, LOADSHARE_LINKSET, LOADSHARE_COMBINED_LINKSET} loadshare_type;
 
+/* Linkset-groups: Each linkset in a group, has a pointer (group_linkset) 
+   to a master linkset. This master linkset has a pointer to a linked list
+   of idle channels (idle_list) for the whole group */
+
 struct linkset {
   char* name;
   int n_links;
@@ -58,6 +62,7 @@ struct linkset {
   char* context;
   char* language;
   ss7_variant variant;
+  char* group;			/* dial group name */
   char* combined;		/* combined linkset name */
   int noa;			/* nature of address */
   loadshare_type loadshare;
@@ -78,6 +83,7 @@ struct linkset {
   struct link* slinks[MAX_LINKS_PER_LINKSET];
   int first_cic, last_cic;
   int init_grs_done;		/* GRS sent? */
+  struct linkset* group_linkset;
   /* Global circuit list. Protected by glock. */
   struct ss7_chan *cic_list[MAX_CIC];
   struct ss7_chan *idle_list;
@@ -185,6 +191,8 @@ extern int clusterlistenport;
 
 int load_config(int reload);
 void destroy_config(void);
+int has_linkset_group(char* name);
+struct linkset* lookup_linkset_for_group(const char* name, int no);
 int is_combined_linkset(struct linkset* ls1, struct linkset* ls2);
 struct linkset* find_linkset_for_dpc(int pc, int cic);
 struct linkset* lookup_linkset(const char* name);

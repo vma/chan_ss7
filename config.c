@@ -80,6 +80,28 @@ static struct ast_jb_conf default_jbconf =
 static struct ast_jb_conf global_jbconf;
 
 
+int has_linkset_group(char* name) {
+  int i;
+  for (i = 0; i < n_linksets; i++) {
+    if (linksets[i].group && !strcmp(linksets[i].group, name))
+      return 1;
+  }
+  return 0;
+}
+
+struct linkset* lookup_linkset_for_group(const char* name, int no) {
+  int i, cnt;
+  for (i = 0, cnt = 0; i < n_linksets; i++) {
+    if (linksets[i].enabled)
+      if (linksets[i].group && !strcmp(linksets[i].group, name)) {
+	if (cnt == no)
+	  return &linksets[i];
+	cnt++;
+      }
+  }
+  return NULL;
+}
+
 int is_combined_linkset(struct linkset* ls1, struct linkset* ls2)
 {
   if (ls1 == ls2)
@@ -139,6 +161,34 @@ static struct link* lookup_link(const char* name) {
       return &links[i];
   }
   return NULL;
+}
+
+static int make_group_linksets(void)
+{
+  int j, k;
+
+  for (k = 0, j = 0; k < this_host->n_spans; k++) {
+    struct link* link = this_host->spans[k].link;
+    struct linkset* linkset = link->linkset;
+    int lsi;
+    if (link->enabled && linkset->enabled) {
+      if (linkset->group && *linkset->group) {
+	linkset->group_linkset = lookup_linkset_for_group(linkset->group, 0);
+	for (lsi = 0; lsi < n_linksets; lsi++) {
+	  struct linkset* ls = &linksets[lsi];
+	  if (ls->group && !strcmp(linkset->group, ls->group)) {
+	    if (linkset->hunt_policy != ls->hunt_policy) {
+	      ast_log(LOG_ERROR, "Linksets %s and %s in group %s have different hunting policies\n", linkset->name, ls->name, linkset->group);
+	      return -1;
+	    }
+	  }
+}
+      }
+      else
+	linkset->group_linkset = linkset;
+   }
+  }
+   return 0;
 }
 
 static struct host* lookup_host(const char* name) {
@@ -223,13 +273,14 @@ static int load_config_linkset(struct ast_config *cfg, const char* cat)
   const char *language = "";
   const char *linkset_name = &cat[strlen("linkset-")];
   struct linkset* linkset = &linksets[n_linksets];
-  int has_enabled = 0, has_context = 0, has_language = 0, has_hunt_policy = 0, has_use_connect = 0, has_enable_st = 0, has_subservice = 0;
+  int has_context = 0, has_language = 0, has_hunt_policy = 0, has_use_connect = 0, has_enable_st = 0, has_subservice = 0;
   int i;
 
   if (n_linksets == MAX_LINKSETS) {
     ast_log(LOG_ERROR, "Too many linksets defined. Max %d\n", MAX_LINKSETS);
     return -1;
   }
+  linkset->enabled = 1;
   linkset->n_slinks = 0;
   linkset->n_schannels = 0;
   linkset->t35_value = 15000;
@@ -242,6 +293,8 @@ static int load_config_linkset(struct ast_config *cfg, const char* cat)
   linkset->loadshare = LOADSHARE_COMBINED_LINKSET;
   linkset->inservice = 0;
   linkset->combined = 0;
+  linkset->group = 0;
+  linkset->group_linkset = NULL;
   linkset->variant = ITU_SS7;
   linkset->noa = -1;
   linkset->grs = 1;
@@ -267,6 +320,8 @@ static int load_config_linkset(struct ast_config *cfg, const char* cat)
 	ast_log(LOG_ERROR, "Error invalid SS7 variant '%s'.\n", v->value);
 	return -1;
       }
+    } else if(0 == strcasecmp(v->name, "group")) {
+      linkset->group = strdup(v->value);
     } else if(0 == strcasecmp(v->name, "combined")) {
       linkset->combined = strdup(v->value);
     }
@@ -290,7 +345,6 @@ static int load_config_linkset(struct ast_config *cfg, const char* cat)
 	return -1;
       }
       linkset->enabled = strcasecmp(v->value, "yes") == 0;
-      has_enabled = 1;
     } else if(0 == strcasecmp(v->name, "use_connect")) {
       if ((strcasecmp(v->value, "yes") != 0) && (strcasecmp(v->value, "no") != 0)) {
 	ast_log(LOG_ERROR, "Invalid value '%s' for use_connect entry for linkset '%s'.\n", v->value, linkset_name);
@@ -419,10 +473,6 @@ static int load_config_linkset(struct ast_config *cfg, const char* cat)
     ast_log(LOG_ERROR, "Missing hunt_policy entry for linkset '%s'\n", linkset_name);
     return -1;
   }
-  if (!has_enabled) {
-    ast_log(LOG_ERROR, "Missing enabled entry for linkset '%s'\n", linkset_name);
-    return -1;
-  }
   if (!has_use_connect) {
     ast_log(LOG_ERROR, "Missing use_connect entry for linkset '%s'\n", linkset_name);
     return -1;
@@ -470,7 +520,7 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
   int i;
   int lastcic = 0;
 
-  int has_linkset = 0, has_enabled = 0, has_firstcic = 0, has_channels = 0, has_schannel = 0, has_sls = 0;
+  int has_linkset = 0, has_firstcic = 0, has_channels = 0, has_schannel = 0, has_sls = 0;
 
   if (lookup_link(link_name)) {
     ast_log(LOG_ERROR, "Links '%s' defined twice.\n", link_name);
@@ -481,6 +531,7 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
     return -1;
   }
 
+  link->enabled = 1;
   link->schannel.mask = 0;
   link->n_schannels = 0;
   link->slinkix = -1;
@@ -515,7 +566,6 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
 	return -1;
       }
       link->enabled = strcasecmp(v->value, "yes") == 0;
-      has_enabled = 1;
     } else if(0 == strcasecmp(v->name, "relaxdtmf")) {
       if ((strcasecmp(v->value, "yes") != 0) && (strcasecmp(v->value, "no") != 0)) {
         ast_log(LOG_ERROR, "Invalid value '%s' for enabled entry for link '%s'.\n", v->value, link_name);
@@ -686,10 +736,6 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
     ast_log(LOG_ERROR, "Missing linkset entry for link '%s'.\n", link_name);
     return -1;
   }
-  if (!has_enabled) {
-    ast_log(LOG_ERROR, "Missing enabled entry for link '%s'.\n", link_name);
-    return -1;
-  }
   if (!has_firstcic) {
     ast_log(LOG_ERROR, "Missing firstcic entry for link '%s'.\n", link_name);
     return -1;
@@ -853,8 +899,10 @@ static int load_config_host(struct ast_config *cfg, const char* cat)
       has_enabled = 1;
     } else if(0 == strcasecmp(v->name, "default_linkset")) {
       host->default_linkset = lookup_linkset(v->value);
+      if (!host->default_linkset)
+	host->default_linkset = lookup_linkset_for_group(v->value, 0);
       if (!host->default_linkset) {
-	ast_log(LOG_ERROR, "Unknown default_linkset '%s' for host '%s'.\n", v->value, host_name);
+	ast_log(LOG_ERROR, "Unknown default_linkset or group '%s' for host '%s'.\n", v->value, host_name);
 	return -1;
       }
     } else if(0 == strcasecmp(v->name, "links")) {
@@ -1208,6 +1256,8 @@ int load_config(int reload)
     this_host->default_linkset = linkset;
   }
   if (make_host_slinks())
+    goto fail;
+  if (make_group_linksets())
     goto fail;
 
   show_config();

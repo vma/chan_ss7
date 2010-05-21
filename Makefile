@@ -116,7 +116,7 @@ install: chan_ss7.so
 	install -m 755 mtp3d $(INSTALL_PREFIX)/sbin
 
 clean:
-	rm -f chan_ss7.so mtp3d $(ALLOBJS) mtp_standalone.o transport_standalone.o utils_standalone.o config_standalone.o .depend
+	rm -f chan_ss7.so mtp3d mtp3cli astversion $(ALLOBJS) mtp_standalone.o transport_standalone.o utils_standalone.o config_standalone.o .depend
 	rm -f instdir/sbin/mtp3d \
 		instdir/sbin/safe_mtp3d \
 		instdir/etc/init.d/mtp3d \
