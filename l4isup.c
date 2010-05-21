@@ -465,6 +465,8 @@ static void mtp_enqueue_isup_forward(struct ss7_chan* pvt, unsigned char *msg, i
   mtp_enqueue_isup_packet(pvt->link, pvt->cic, msg, msglen, MTP_REQ_ISUP_FORWARD);
 }
 
+/* Deprecated, use find_pvt_with_pc */
+__attribute__((__deprecated__))
 static struct ss7_chan* find_pvt(struct link* slink, int cic)
 {
   struct linkset* ls;
@@ -480,6 +482,28 @@ static struct ss7_chan* find_pvt(struct link* slink, int cic)
   return NULL;
 }
 
+static struct ss7_chan* find_pvt_with_pc(struct link* slink, int cic, int pc)
+{
+  struct linkset* ls;
+  int lsi;
+
+  ls = slink->linkset;
+  if (ls->dpc == pc) {
+    if (ls->cic_list[cic])
+      return ls->cic_list[cic];
+    for (lsi = 0; lsi < n_linksets; lsi++)
+      if (is_combined_linkset(ls, &linksets[lsi]))
+        if (linksets[lsi].cic_list[cic])
+          return linksets[lsi].cic_list[cic];
+  } else {
+    for (lsi = 0; lsi < n_linksets; lsi++)
+      if (is_combined_linkset(ls, &linksets[lsi]))
+        if (linksets[lsi].dpc == pc)
+          if (linksets[lsi].cic_list[cic])
+            return linksets[lsi].cic_list[cic];
+  }
+  return NULL;
+}
 
 /* This function must be called with the global lock mutex held. */
 static void remove_from_idlelist(struct ss7_chan *pvt) {
@@ -2769,7 +2793,7 @@ static void process_circuit_message(struct link* slink,
     return;
   }
   lock_global();
-  pvt = find_pvt(slink, cic);
+  pvt = find_pvt_with_pc(slink, cic, inmsg->opc);
   ast_log(LOG_DEBUG, "Process circuit message %s, CIC=%d, state=%d, reset_done=%d\n", isupmsg(inmsg->typ), cic, pvt->state, pvt->reset_done);
   if(!pvt->equipped) {
     ast_log(LOG_ERROR, "Received CIC=%d for not equipped circuit (typ=%s), link '%s'.\n", cic, isupmsg(inmsg->typ), slink->name);
@@ -2843,7 +2867,7 @@ static void process_circuit_group_message(struct link* slink,
     return;
   }
   lock_global();
-  pvt = find_pvt(slink, cic);
+  pvt = find_pvt_with_pc(slink, cic, inmsg->opc);
   if(!(pvt->equipped || (inmsg->typ == ISUP_CGA) || (inmsg->typ == ISUP_CUA) || (inmsg->typ == ISUP_GRA))) {
     ast_log(LOG_ERROR, "Received CIC=%d for not equipped circuit (typ=%s), link '%s'.\n", cic, isupmsg(inmsg->typ), slink->name);
     unlock_global();
@@ -4718,7 +4742,7 @@ static void isup_event_handler(struct mtp_event* event)
     unlock_global();
     return;
   }
-  pvt = find_pvt(linkset->links[0], cic);
+  pvt = find_pvt_with_pc(linkset->links[0], cic, isup_msg.opc);
   ast_log(LOG_DEBUG, "Got ISUP event, typ=%s, cic=%d, dpc=%d, linkset=%s, pvt=0x%08lx, pvt.eq=%d \n", isupmsg(isup_msg.typ), cic, dpc, linkset->name, (unsigned long int) pvt, pvt ? pvt->equipped : -1);
   unlock_global();
 
@@ -4767,7 +4791,7 @@ void l4isup_event(struct mtp_event* event)
     /* Q.764 (2.9.5): Discard invalid message.*/
     ast_log(LOG_NOTICE, "ISUP decoding error, message discarded. (typ=%d)\n", isup_msg.typ);
   } else {
-    struct ss7_chan* pvt = find_pvt(event->isup.slink, isup_msg.cic);
+    struct ss7_chan* pvt = find_pvt_with_pc(event->isup.slink, isup_msg.cic, isup_msg.opc);
     if (pvt) {
       if(pvt->equipped)
 	process_isup_message(pvt->link, &isup_msg);
