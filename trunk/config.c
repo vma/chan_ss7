@@ -80,6 +80,11 @@ static struct ast_jb_conf default_jbconf =
 static struct ast_jb_conf global_jbconf;
 
 
+int timeslots(struct link* link)
+{
+  return (link->iftype == INTERFACE_TYPE_E1) ? 32 : 25;
+}
+
 int has_linkset_group(char* name) {
   int i;
   for (i = 0; i < n_linksets; i++) {
@@ -229,7 +234,7 @@ static int make_host_slinks(void)
   for (k = 0; k < this_host->n_spans; k++) {
     struct link* link = this_host->spans[k].link;
     int connector = this_host->spans[k].connector;
-    link->first_zapid = (connector-1) * 32 - (connector-1);
+    link->first_zapid = (connector-1) * timeslots(link) - (connector-1);
     if (link->enabled) {
       llink = link;
       if ((link->schannel.mask != 0) && (!link->remote)) {
@@ -532,6 +537,7 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
   }
 
   link->enabled = 1;
+  link->iftype = INTERFACE_TYPE_E1;
   link->schannel.mask = 0;
   link->n_schannels = 0;
   link->slinkix = -1;
@@ -553,7 +559,16 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
 
   v = ast_variable_browse(cfg, cat);
   while(v != NULL) {
-    if(0 == strcasecmp(v->name, "linkset")) {
+    if(0 == strcasecmp(v->name, "iftype")) {
+      if (strcasecmp(v->value, "E1") == 0)
+	link->iftype = INTERFACE_TYPE_E1;
+      else if (strcasecmp(v->value, "T1") != 0)
+	link->iftype = INTERFACE_TYPE_T1;
+      else {
+        ast_log(LOG_ERROR, "Invalid value '%s' for iftype entry for link '%s' (must be E1 or T1)\n", v->value, link_name);
+        return -1;
+      }
+    } else if(0 == strcasecmp(v->name, "linkset")) {
       linkset = lookup_linkset(v->value);
       if (!linkset) {
 	ast_log(LOG_ERROR, "Linkset '%s' not found while parsing link '%s'.\n", v->value, link_name);
