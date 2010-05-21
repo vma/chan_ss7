@@ -486,12 +486,12 @@ static void remove_from_idlelist(struct ss7_chan *pvt) {
   struct linkset* linkset = pvt->link->linkset;
   struct ss7_chan *prev, *cur;
 
-  cur = linkset->idle_list;
+  cur = linkset->group_linkset->idle_list;
   prev = NULL;
   while(cur != NULL) {
     if(pvt->cic == cur->cic) {
       if(prev == NULL) {
-        linkset->idle_list = pvt->next_idle;
+        linkset->group_linkset->idle_list = pvt->next_idle;
       } else {
         prev->next_idle = pvt->next_idle;
       }
@@ -501,8 +501,7 @@ static void remove_from_idlelist(struct ss7_chan *pvt) {
     prev = cur;
     cur = cur->next_idle;
   }
-  ast_log(LOG_NOTICE, "Trying to remove CIC=%d from idle list, but not "
-          "found?!?.\n", pvt->cic);
+  ast_log(LOG_NOTICE, "Trying to remove CIC=%d from idle list, but not found?!?.\n", pvt->cic);
 }
 
 /* This function must be called with the global lock mutex held. */
@@ -510,8 +509,7 @@ static void add_to_idlelist(struct ss7_chan *pvt) {
   struct linkset* linkset = pvt->link->linkset;
   struct ss7_chan *prev, *cur;
 
-#if 1
-  cur = linkset->idle_list;
+  cur = linkset->group_linkset->idle_list;
   prev = NULL;
   while(cur != NULL) {
     if(pvt->cic == cur->cic) {
@@ -520,10 +518,9 @@ static void add_to_idlelist(struct ss7_chan *pvt) {
     }
     cur = cur->next_idle;
   }
-#endif
 
-  pvt->next_idle = linkset->idle_list;
-  linkset->idle_list = pvt;
+  pvt->next_idle = linkset->group_linkset->idle_list;
+  linkset->group_linkset->idle_list = pvt;
 }
 
 /* This implements hunting policy. It must be called with the global lock mutex
@@ -531,16 +528,20 @@ static void add_to_idlelist(struct ss7_chan *pvt) {
 
 /* This implements the policy: Primary hunting group odd CICs, secondary
    hunting group even CICs. Choose least recently used CIC. */
-static struct ss7_chan *cic_hunt_odd_lru(struct linkset* linkset) {
+static struct ss7_chan *cic_hunt_odd_lru(struct linkset* linkset, int first_cic, int last_cic) {
   struct ss7_chan *cur, *prev, *best, *best_prev;
   int odd;
 
   best = NULL;
   best_prev = NULL;
   for(odd = 1; odd >= 0; odd--) {
-    for(cur = linkset->idle_list, prev = NULL; cur != NULL; prev = cur, cur = cur->next_idle) {
+    for(cur = linkset->group_linkset->idle_list, prev = NULL; cur != NULL; prev = cur, cur = cur->next_idle) {
       /* Don't select lines that are resetting or blocked. */
-      if(!cur->reset_done || (cur->blocked & (BL_LH|BL_RM|BL_RH|BL_UNEQUIPPED|BL_LINKDOWN))) {
+      if(!cur->reset_done || (cur->blocked & (BL_LH|BL_RM|BL_RH|BL_UNEQUIPPED|BL_LINKDOWN|BL_NOUSE))) {
+        continue;
+      }
+      /* is this cic within the selected range? */
+      if(cur->cic < first_cic || cur->cic > last_cic) {
         continue;
       }
       if((cur->cic % 2) == odd) {
@@ -550,7 +551,7 @@ static struct ss7_chan *cic_hunt_odd_lru(struct linkset* linkset) {
     }
     if(best != NULL) {
       if(best_prev == NULL) {
-        linkset->idle_list = best->next_idle;
+        linkset->group_linkset->idle_list = best->next_idle;
       } else {
         best_prev->next_idle = best->next_idle;
       }
@@ -564,15 +565,19 @@ static struct ss7_chan *cic_hunt_odd_lru(struct linkset* linkset) {
 
 /* This implements the policy: Primary hunting group even CICs, secondary
    hunting group odd CICs. Choose most recently used CIC. */
-static struct ss7_chan *cic_hunt_even_mru(struct linkset* linkset) {
+static struct ss7_chan *cic_hunt_even_mru(struct linkset* linkset, int first_cic, int last_cic) {
   struct ss7_chan *cur, *prev, *best, *best_prev;
 
   best = NULL;
   best_prev = NULL;
 
-  for(cur = linkset->idle_list, prev = NULL; cur != NULL; prev = cur, cur = cur->next_idle) {
+  for(cur = linkset->group_linkset->idle_list, prev = NULL; cur != NULL; prev = cur, cur = cur->next_idle) {
     /* Don't select lines that are resetting or blocked. */
-    if(!cur->reset_done || (cur->blocked & (BL_LH|BL_RM|BL_RH|BL_UNEQUIPPED|BL_LINKDOWN))) {
+    if(!cur->reset_done || (cur->blocked & (BL_LH|BL_RM|BL_RH|BL_UNEQUIPPED|BL_LINKDOWN|BL_NOUSE))) {
+      continue;
+    }
+    /* is this cic within the selected range? */
+    if(cur->cic < first_cic || cur->cic > last_cic) {
       continue;
     }
     if((cur->cic % 2) == 0) {
@@ -590,7 +595,7 @@ static struct ss7_chan *cic_hunt_even_mru(struct linkset* linkset) {
 
   if(best != NULL) {
     if(best_prev == NULL) {
-      linkset->idle_list = best->next_idle;
+      linkset->group_linkset->idle_list = best->next_idle;
     } else {
       best_prev->next_idle = best->next_idle;
     }
@@ -603,15 +608,19 @@ static struct ss7_chan *cic_hunt_even_mru(struct linkset* linkset) {
 }
 
 /* This implements the policy: Sequential low to high CICs */
-static struct ss7_chan *cic_hunt_seq_lth_htl(struct linkset* linkset, int lth)
+static struct ss7_chan *cic_hunt_seq_lth_htl(struct linkset* linkset, int lth, int first_cic, int last_cic)
 {
   struct ss7_chan *cur, *prev, *best = NULL, *best_prev = NULL;
 
-  for(cur = linkset->idle_list, prev = NULL; cur != NULL; prev = cur, cur = cur->next_idle) {
+  for(cur = linkset->group_linkset->idle_list, prev = NULL; cur != NULL; prev = cur, cur = cur->next_idle) {
     /* Don't select lines that are resetting or blocked. */
-    if(!cur->reset_done || (cur->blocked & (BL_LH|BL_RM|BL_RH|BL_UNEQUIPPED|BL_LINKDOWN))) {
+    if(!cur->reset_done || (cur->blocked & (BL_LH|BL_RM|BL_RH|BL_UNEQUIPPED|BL_LINKDOWN|BL_NOUSE))) {
       continue;
     }
+    /* is this cic within the selected range? */
+    if(cur->cic < first_cic || cur->cic > last_cic) {
+      continue;
+			          }
     if (!best) {
       best = cur;
       continue;
@@ -632,7 +641,7 @@ static struct ss7_chan *cic_hunt_seq_lth_htl(struct linkset* linkset, int lth)
 
   if(best != NULL) {
     if(best_prev == NULL) {
-      linkset->idle_list = best->next_idle;
+      linkset->group_linkset->idle_list = best->next_idle;
     } else {
       best_prev->next_idle = best->next_idle;
     }
@@ -821,21 +830,30 @@ static struct ast_channel *ss7_new(struct ss7_chan *pvt, int state, char* cid_nu
 }
 
 /* hunt free CIC */
-static struct ss7_chan* cic_hunt(struct linkset* linkset)
+static struct ss7_chan* cic_hunt(struct linkset* linkset, int first_cic, int last_cic)
 {
+  if(first_cic > last_cic) {
+     ast_log(LOG_ERROR, "first CIC: %d greater than last CIC: %d\n", first_cic, last_cic);
+     return NULL;
+  }
+  if(first_cic < linkset->first_cic || first_cic > linkset->last_cic || last_cic > linkset->last_cic) {
+     ast_log(LOG_ERROR, "CICs not in valid range, first: %d last: %d\n", first_cic, last_cic);
+     return NULL;
+  }
+
   struct ss7_chan* pvt;
   switch(linkset->hunt_policy) {
   case HUNT_ODD_LRU:
-    pvt = cic_hunt_odd_lru(linkset);
+    pvt = cic_hunt_odd_lru(linkset, first_cic, last_cic);
     break;
   case HUNT_EVEN_MRU:
-    pvt = cic_hunt_even_mru(linkset);
+    pvt = cic_hunt_even_mru(linkset, first_cic, last_cic);
     break;
   case HUNT_SEQ_LTH:
-    pvt = cic_hunt_seq_lth_htl(linkset, 1);
+    pvt = cic_hunt_seq_lth_htl(linkset, 1, first_cic, last_cic);
     break;
   case HUNT_SEQ_HTL:
-    pvt = cic_hunt_seq_lth_htl(linkset, 0);
+    pvt = cic_hunt_seq_lth_htl(linkset, 0, first_cic, last_cic);
     break;
   default:
     pvt = NULL;
@@ -853,6 +871,8 @@ static struct ast_channel *ss7_requester(const char *type, int format,
   struct ss7_chan *pvt;
   struct linkset* linkset = this_host->default_linkset;
   char *sep = strchr(arg, '/');
+  char *cic_sep = strchr(arg, ':');
+  int first_cic, last_cic;
 
   ast_log(LOG_DEBUG, "SS7 request (%s/%s) format = 0x%X.\n", type, arg, format);
 
@@ -863,16 +883,71 @@ static struct ast_channel *ss7_requester(const char *type, int format,
   }
   if (sep) {
     char name_buf[100];
-    strncpy(name_buf, arg, sep-arg);
-    name_buf[sep-arg] = 0;
-    linkset = lookup_linkset(name_buf);
+    if(cic_sep != NULL) {
+      strncpy(name_buf, arg, cic_sep-arg);
+      name_buf[cic_sep-arg] = 0;
+    }
+    else {
+      strncpy(name_buf, arg, sep-arg);
+      name_buf[sep-arg] = 0;
+    }
+    if (!has_linkset_group(name_buf)) {
+      linkset = lookup_linkset(name_buf);
+      if (!linkset) {
+	ast_log(LOG_ERROR, "SS7 requester: No such linkset: '%s', using default\n", name_buf);
+	linkset = this_host->default_linkset;
+      }
+    } else
+      linkset = lookup_linkset_for_group(name_buf, 0);
     if (!linkset) {
-      ast_log(LOG_ERROR, "SS7 requester: No such linkset: '%s', using default\n", name_buf);
+      ast_log(LOG_ERROR, "SS7 requester: Cannot use linkset/group '%s', using default.\n", name_buf);
       linkset = this_host->default_linkset;
     }
   }
   lock_global();
-  pvt = cic_hunt(linkset);
+
+  first_cic = linkset->first_cic;
+  last_cic = linkset->last_cic;
+  if(cic_sep != NULL) {
+    /* use specific cics */
+    char cics[100];
+    char *cics_sep;
+    char first_cic_dig[10], last_cic_dig[10];
+
+    strncpy(cics, cic_sep + 1, sep-cic_sep-1);
+    cics[sep-cic_sep] = '\0';
+
+    cics_sep = strchr(cics, '-');
+
+    if(cics_sep != NULL) {
+      int n;
+      strncpy(first_cic_dig, cics, cics_sep-cics);
+      strncpy(last_cic_dig, cics_sep + 1, strlen(cics) - (cics_sep-cics) - 2);
+
+      first_cic_dig[cics_sep-cics] = '\0';
+      last_cic_dig[strlen(cics) - (cics_sep-cics) - 2] = '\0';
+      n = atoi(first_cic_dig);
+      if (n != 0)
+	first_cic = n;
+      else
+	ast_log(LOG_ERROR, "SS7 requester: Invalic CIC number '%s' in range, ignoring.\n", first_cic_dig);
+      n = atoi(last_cic_dig);
+      if (n != 0)
+	last_cic = n;
+      else
+	ast_log(LOG_ERROR, "SS7 requester: Invalic CIC number '%s' in range, ignoring.\n", last_cic_dig);
+    }
+    else {
+      int cic = atoi(cics);
+      if (cic != 0) {
+	first_cic = cic;
+	last_cic = cic;
+      }
+      else
+	ast_log(LOG_ERROR, "SS7 requester: Invalic CIC number '%s', ignoring.\n", cics);
+    }
+  }
+  pvt = cic_hunt(linkset, first_cic, last_cic);
 
   if(pvt == NULL) {
     unlock_global();
@@ -967,6 +1042,11 @@ static int ss7_indicate(struct ast_channel *chan, int condition, const void* dat
     ss7_send_call_progress(pvt, 0x03);
     ast_playtones_stop(chan);
     res = 0;
+    break;
+
+  case AST_CONTROL_T38_PARAMETERS:
+    /* Signal back that T38 is not supported, otherwise the bridged channel has to wait until a timeout     */
+    res = -1;
     break;
 
   default:
@@ -2809,7 +2889,9 @@ static struct ss7_chan* reattempt_call(struct ss7_chan *pvt)
   t7_clear(pvt);
   pvt->owner = NULL;
   chan->tech_pvt = NULL;
-  newpvt = cic_hunt(pvt->link->linkset);
+  ast_log(LOG_WARNING, "Reattempt call: hunting on all cics\n");
+  // todo: use cics specified in dial parameters
+  newpvt = cic_hunt(pvt->link->linkset, pvt->link->linkset->first_cic, pvt->link->linkset->last_cic);
   if (newpvt) {
     ast_mutex_lock(&newpvt->lock);
     ast_log(LOG_DEBUG, "Reattempt call: Got cic %d\n", newpvt->cic);
@@ -4291,9 +4373,9 @@ int cmd_reset(int fd, int argc, char *argv[]) {
       ast_mutex_unlock(&pvt->lock);
     }
     idle_list = NULL;
-    while (linkset->idle_list) {
+    while (linkset->group_linkset->idle_list) {
       struct ss7_chan* best = NULL, *cur;
-      for (cur = linkset->idle_list; cur != NULL; cur = cur->next_idle) {
+      for (cur = linkset->group_linkset->idle_list; cur != NULL; cur = cur->next_idle) {
 	if (!best || (best->cic > cur->cic)) {
 	  remove_from_idlelist(cur);
 	  cur->next_idle = idle_list;
@@ -4302,7 +4384,7 @@ int cmd_reset(int fd, int argc, char *argv[]) {
 	}
       }
     }
-    linkset->idle_list = idle_list;
+    linkset->group_linkset->idle_list = idle_list;
     unlock_global();
 #ifndef MODULETEST
     send_init_grs(linkset);

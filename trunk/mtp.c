@@ -150,8 +150,8 @@ typedef struct mtp2_state {
   } state;
 
   /* Counts of raw bytes read and written, used to timestamp raw dumps.
-     Make them double to avoid overflow for quite a while. */
-  double readcount, writecount;
+     Make them long long to avoid overflow for quite a while. */
+  long long readcount, writecount;
 
   /* Sequence numbers and indicator bits to be sent in signalling units. */
   int send_fib;
@@ -632,7 +632,7 @@ static void mtp_changeover(mtp2_t *m) {
     }
   }
   if (!newm) {
-    fifo_log(m, LOG_NOTICE, "MTP changeover last_ack=%d, last_sent=%d, from schannel %d, no INSERVICE schannel found\n", m->retrans_last_acked, m->retrans_last_sent, m->schannel);
+    fifo_log(m, LOG_NOTICE, "MTP changeover last_ack=%d, last_sent=%d, from schannel %d, no INSERVICE schannel found\n", m->retrans_last_acked, m->retrans_last_sent, m->schannel+1);
     if (this_host->has_signalling_receivers)
       fifo_log(m, LOG_NOTICE, "Failover, using another host for signalling.\n");
     if (!cluster_receivers_alive(m->link->linkset)) {
@@ -645,7 +645,7 @@ static void mtp_changeover(mtp2_t *m) {
       return;
     }
   }
-  fifo_log(m, LOG_NOTICE, "MTP changeover last_ack=%d, last_sent=%d, from schannel %d, to schannel %d\n", m->retrans_last_acked, m->retrans_last_sent, m->schannel, newm ? newm->schannel : -1);
+  fifo_log(m, LOG_NOTICE, "MTP changeover last_ack=%d, last_sent=%d, from schannel %d, to schannel %d\n", m->retrans_last_acked, m->retrans_last_sent, m->schannel+1, newm ? newm->schannel+1 : -1);
   i = MTP_NEXT_SEQ(m->retrans_last_acked);
   while (i != MTP_NEXT_SEQ(m->retrans_last_sent)) {
     int sio = m->retrans_buf[i].buf[3];
@@ -1179,7 +1179,7 @@ static void mtp2_good_frame(mtp2_t *m, unsigned char *buf, int len) {
 	sprintf(hex, " %02x", buf[i + 4]);
 	strcat(pbuf, hex);
       }
-      fifo_log(m, LOG_DEBUG, "Got MSU on link '%s/%d' sio=%d slc=%d m.sls=%d bsn=%d/%d, fsn=%d/%d, sio=%02x, len=%d:%s\n", m->name, m->schannel, buf[3] & 0xf, (buf[7] & 0xf0) >> 4, m->sls, bib, bsn, fib, fsn, buf[3], li, pbuf);
+      fifo_log(m, LOG_DEBUG, "Got MSU on link '%s/%d' sio=%d slc=%d m.sls=%d bsn=%d/%d, fsn=%d/%d, sio=%02x, len=%d:%s\n", m->name, m->schannel+1, buf[3] & 0xf, (buf[7] & 0xf0) >> 4, m->sls, bib, bsn, fib, fsn, buf[3], li, pbuf);
     }
   }
 
@@ -1440,7 +1440,7 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
 
       mtp3_put_label(slc, variant(m), dpc, opc, message_slta);
       if (slc != m->sls) {
-	fifo_log(m, LOG_WARNING, "Got SLTM with unexpected sls=%d, OPC=%d DPC=%d on '%s/%d' sls=%d, state=%d.\n", slc, opc, dpc, m->name, m->schannel, m->sls, m->state);
+	fifo_log(m, LOG_WARNING, "Got SLTM with unexpected sls=%d, OPC=%d DPC=%d on '%s/%d' sls=%d, state=%d.\n", slc, opc, dpc, m->name, m->schannel+1, m->sls, m->state);
 	//m->sls = slc;
       }
       fifo_log(m, LOG_DEBUG, "Got SLTM, OPC=%d DPC=%d, sending SLTA '%s', state=%d.\n", opc, dpc, m->name, m->state);
@@ -1512,7 +1512,7 @@ static void mtp2_read_su(mtp2_t *m, unsigned char *buf, int len) {
   unsigned char nextbyte;
 
   if (m->hwmtp2 || m->hwhdlcfcs) {
-    fifo_log(m, LOG_DEBUG, "Got su on link '%s/%d': len %d buf[3] 0x%02x\n", m->name, m->schannel, len, (unsigned int)buf[3]);
+    fifo_log(m, LOG_DEBUG, "Got su on link '%s/%d': len %d buf[3] 0x%02x\n", m->name, m->schannel+1, len, (unsigned int)buf[3]);
     if((len-2 > MTP_MAX_PCK_SIZE-8) || (len < 3)) {
       char msg[80];
       sprintf(msg, "Overlong/too short MTP2 frame %d, dropping\n", len-2);
@@ -2023,7 +2023,8 @@ void *mtp_thread_main(void *data) {
 		m = targetm;
 	    }
 	    int subservice = SS7_PROTO_ISUP | (m->subservice << 4);
-	    mtp3_set_sls(variant(m), m->sls, req->buf); // xxx is this necessary?
+	    if ((req->typ != MTP_REQ_ISUP) && (req->typ != MTP_REQ_ISUP_FORWARD))
+	      mtp3_set_sls(variant(m), m->sls, req->buf);
 	    fifo_log(m, LOG_DEBUG, "Queue MSU, lsi=%d, last_send_ix=%d, linkset=%s, m->link=%s\n", lsi, last_send_ix, linksets[lsi].name, m->link->name);
 	    mtp2_queue_msu(m, subservice, req->buf, req->len);
 	  }
