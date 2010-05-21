@@ -50,6 +50,7 @@ enum {EC_DISABLED, EC_ALLWAYS, EC_31SPEECH};
 
 typedef enum {STATE_UNKNOWN, STATE_ALIVE, STATE_DEAD} alivestate;
 typedef enum {LOADSHARE_NONE, LOADSHARE_LINKSET, LOADSHARE_COMBINED_LINKSET} loadshare_type;
+typedef enum {INTERFACE_TYPE_E1, INTERFACE_TYPE_T1} interface_type;
 
 /* Linkset-groups: Each linkset in a group, has a pointer (group_linkset) 
    to a master linkset. This master linkset has a pointer to a linked list
@@ -95,6 +96,7 @@ struct linkset {
 
 struct link {
   char* name;
+  interface_type iftype;
   struct {unsigned int mask;} schannel;
   int n_schannels;
   int slinkix;
@@ -191,6 +193,7 @@ extern int clusterlistenport;
 
 int load_config(int reload);
 void destroy_config(void);
+int timeslots(struct link* link);
 int has_linkset_group(char* name);
 struct linkset* lookup_linkset_for_group(const char* name, int no);
 int is_combined_linkset(struct linkset* ls1, struct linkset* ls2);
