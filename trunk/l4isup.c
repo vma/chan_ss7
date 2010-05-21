@@ -204,7 +204,6 @@ AST_MUTEX_DEFINE_STATIC(continuity_check_lock);
 static int continuity_check_changes = 0;
 static int must_stop_continuity_check_thread = 0;
 
-static struct ss7_chan dummy_pvt;
 
 static void isup_send_grs(struct ss7_chan *pvt, int count, int do_timers);
 
@@ -435,11 +434,11 @@ static void mtp_enqueue_isup_packet(struct link* link, int cic, unsigned char *m
   ast_mutex_lock(&mtp_send_mutex);
   if (!mtp_send_fifo || !mtp_send_fifo[lsi]) {
     if (cluster_receivers_alive(linkset)) {
-      ast_log(LOG_DEBUG, "MTP send fifo not ready, forwarding to cluster.\n");
+      ast_log(LOG_DEBUG, "MTP send fifo not ready, forwarding to cluster, lsi=%d.\n", lsi);
       cluster_mtp_forward(req);
     }
     else
-      ast_log(LOG_WARNING, "MTP send fifo not ready.\n");
+      ast_log(LOG_WARNING, "MTP send fifo not ready, lsi=%d.\n", lsi);
     ast_mutex_unlock(&mtp_send_mutex);
     return;
   }
@@ -4875,7 +4874,6 @@ int isup_init(void) {
       }
     }
   }
-  init_pvt(&dummy_pvt, -1);
 
 #ifdef MODULETEST
   {
