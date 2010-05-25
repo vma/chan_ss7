@@ -1066,12 +1066,12 @@ static int ss7_indicate(struct ast_channel *chan, int condition, const void* dat
     ast_playtones_stop(chan);
     res = 0;
     break;
-
+#ifdef USE_ASTERISK_1_6
   case AST_CONTROL_T38_PARAMETERS:
     /* Signal back that T38 is not supported, otherwise the bridged channel has to wait until a timeout     */
     res = -1;
     break;
-
+#endif
   default:
     /* Not supported. */
     res = !pvt->has_inband_ind && !pvt->is_digital; /* If there is no indication of in-band information, tell asterisk to generate ringing indication tone */
