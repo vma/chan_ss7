@@ -931,7 +931,7 @@ static struct ast_channel *ss7_requester(const char *type, int format,
 
   first_cic = linkset->first_cic;
   last_cic = linkset->last_cic;
-  if(cic_sep != NULL) {
+  if(sep && cic_sep) {
     /* use specific cics */
     char cics[100];
     char *cics_sep;
@@ -945,10 +945,10 @@ static struct ast_channel *ss7_requester(const char *type, int format,
     if(cics_sep != NULL) {
       int n;
       strncpy(first_cic_dig, cics, cics_sep-cics);
-      strncpy(last_cic_dig, cics_sep + 1, strlen(cics) - (cics_sep-cics) - 2);
+      strncpy(last_cic_dig, cics_sep + 1, strlen(cics) - (cics_sep-cics) - 1);
 
       first_cic_dig[cics_sep-cics] = '\0';
-      last_cic_dig[strlen(cics) - (cics_sep-cics) - 2] = '\0';
+      last_cic_dig[strlen(cics) - (cics_sep-cics) - 1] = '\0';
       n = atoi(first_cic_dig);
       if (n != 0)
 	first_cic = n;
