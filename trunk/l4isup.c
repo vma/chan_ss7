@@ -938,7 +938,7 @@ static struct ast_channel *ss7_requester(const char *type, int format,
     char first_cic_dig[10], last_cic_dig[10];
 
     strncpy(cics, cic_sep + 1, sep-cic_sep-1);
-    cics[sep-cic_sep] = '\0';
+    cics[sep-cic_sep-1] = '\0';
 
     cics_sep = strchr(cics, '-');
 
