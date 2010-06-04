@@ -82,7 +82,7 @@ static struct ast_jb_conf global_jbconf;
 
 int timeslots(struct link* link)
 {
-  return (link->iftype == INTERFACE_TYPE_E1) ? 32 : 25;
+  return (link->iftype == INTERFACE_TYPE_E1) ? 32 : 24;
 }
 
 int has_linkset_group(char* name) {
@@ -562,7 +562,7 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
     if(0 == strcasecmp(v->name, "iftype")) {
       if (strcasecmp(v->value, "E1") == 0)
 	link->iftype = INTERFACE_TYPE_E1;
-      else if (strcasecmp(v->value, "T1") != 0)
+      else if (strcasecmp(v->value, "T1") == 0)
 	link->iftype = INTERFACE_TYPE_T1;
       else {
         ast_log(LOG_ERROR, "Invalid value '%s' for iftype entry for link '%s' (must be E1 or T1)\n", v->value, link_name);
