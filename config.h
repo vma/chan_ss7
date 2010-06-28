@@ -34,7 +34,7 @@ typedef enum { BL_LM=1, BL_LH=2, BL_RM=4, BL_RH=8, BL_UNEQUIPPED=0x10, BL_LINKDO
 /* Upper bounds only determined by installed hardware, use decent values */
 #define MAX_E1_CONNECTOR_NO 32
 #define MAX_CIC 4096
-#define MAX_LINKSETS 8
+#define MAX_LINKSETS 16
 #define MAX_LINKS 128
 #define MAX_LINKS_PER_LINKSET 16
 #define MAX_LINKS_PER_HOST 32

@@ -37,7 +37,7 @@
 #define MTP_REQ_MAX_SIZE (sizeof(struct mtp_req) + MTP_MAX_PCK_SIZE)
 
 struct mtp_req {
-  /* The "typ" fiend determines which element in the union is used. */
+  /* The "typ" field determines which element in the union is used. */
   enum {
     MTP_REQ_ISUP,               /* Queue ISUP MSU for sending on link */
     MTP_REQ_SCCP,               /* Queue SCCP MSU for sending on link */
@@ -48,17 +48,19 @@ struct mtp_req {
     MTP_REQ_CLI,                /* CLI interaction request */
   } typ;
 
-  unsigned long seq_no;
+  unsigned char infversion[4];
+  unsigned int seq_no;
+  unsigned int padding0[8];
 
   union {
     struct {
+      int slinkix;
       struct link* slink;
       struct link* link;
-      int slinkix;
     } isup;
     struct {
-      struct link* slink;
       int slinkix;
+      struct link* slink;
     } sccp;
     struct {
       int linkix;
@@ -74,6 +76,9 @@ struct mtp_req {
 	} sccp;
       };
     } regist;
+    struct {
+      unsigned char padding[32];
+    } padding;
   };
 
   int len;
@@ -95,17 +100,19 @@ struct mtp_event {
     MTP_EVENT_LAST,             /* Placeholder, Must be last in enumeration */
   } typ;
 
-  unsigned long seq_no;
+  unsigned char infversion[4];
+  unsigned int seq_no;
+  unsigned int padding0[8];
 
   union {
     struct {
+      int slinkix;
       struct link* slink;
       struct link* link;
-      int slinkix;
     } isup;
     struct {
-      struct link* slink;
       int slinkix;
+      struct link* slink;
     } sccp;
 
     struct {
@@ -120,8 +127,8 @@ struct mtp_event {
 
     struct {
       int level;
-      const char *file;
       int line;
+      const char *file;
       const char *function;
     } log;
 
@@ -139,6 +146,9 @@ struct mtp_event {
       } link_state;
       struct link* link;
     } status;
+    struct {
+      unsigned char padding[32];
+    } padding;
   };
 
   int len;
