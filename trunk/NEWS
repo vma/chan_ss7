@@ -17,7 +17,7 @@ Specfication for version 1.4.2
 
 
 New in version 1.4.2
-- Fix for T1 interface type handling
+- Minor fixes
 
 New in version 1.4.1
 - Fix for dial command CIC parsing.
@@ -26,7 +26,7 @@ New in version 1.4
 - Support for linkset groups. The config option "group" for a linkset specifies which group a
   linkset belongs to. The dial command is extended to allow dialing to a linkset group, e.g.
   Dial(SS7/group1) where group1 may consist of multiple linksets.
-- Hanling/rejection of T.38 parameters.
+- Handling/rejection of T.38 parameters.
 - Dial command syntax extended. Dialing specific CIC is Dial(SS7/linkset:cic-range), e.g.
   Dial(SS7/linkset1:1-10/number) for dialing out on linkset1 on CICs 1-10, or Dial(SS7/linkset1:2/number)
   for dialing on CIC 2.

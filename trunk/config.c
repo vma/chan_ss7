@@ -1172,6 +1172,9 @@ int load_config(int reload)
   }
 
 
+  memset(linksets, 0, sizeof(linksets));
+  memset(hosts, 0, sizeof(hosts));
+  memset(links, 0, sizeof(links));
   n_linksets = 0;
   n_links = 0;
   n_hosts = 0;

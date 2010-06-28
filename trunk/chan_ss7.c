@@ -178,7 +178,7 @@ static void *monitor_main(void *data) {
 	  if (k < this_host->n_spans) {
 	    if (link->remote) {
 	      if (link->mtp3fd == -1) {
-		link->mtp3fd = mtp3_connect_socket(link->mtp3server_host, link->mtp3server_port);
+		link->mtp3fd = mtp3_connect_socket(link->mtp3server_host, *link->mtp3server_port ? link->mtp3server_port : "11999");
 		if (link->mtp3fd != -1)
 		  res = mtp3_register_isup(link->mtp3fd, link->linkix);
 		else
