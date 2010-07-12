@@ -151,12 +151,18 @@ static void *monitor_main(void *data) {
   int i, n_fds = 0;
   int rebuild_fds = 1;
   struct lffifo *receive_fifo = mtp_get_receive_fifo();
+  time_t lastcheck = 0, now;
 
   ast_verbose(VERBOSE_PREFIX_3 "Starting monitor thread, pid=%d.\n", getpid());
 
   fds[0].fd = get_receive_pipe();
   fds[0].events = POLLIN;
   while(monitor_running) {
+    time(&now);
+    if (lastcheck + 10 < now) {
+      rebuild_fds = 1;
+      lastcheck = now;
+    }
     if (rebuild_fds) {
       if (rebuild_fds > 1)
 	poll(fds, 0, 200); /* sleep */
@@ -166,28 +172,27 @@ static void *monitor_main(void *data) {
 	struct linkset* linkset = &linksets[i];
 	int j;
 	for (j = 0; j < linkset->n_links; j++) {
-	  int k;
+	  int k, l;
 	  struct link* link = linkset->links[j];
 	  for (k = 0; k < this_host->n_spans; k++) {
-	    if (this_host->spans[k].link == link)
-	      break;
-	    if ((this_host->spans[k].link->linkset == link->linkset) ||
-		(is_combined_linkset(this_host->spans[k].link->linkset, link->linkset)))
-	      break;
-	  }
-	  if (k < this_host->n_spans) {
-	    if (link->remote) {
-	      if (link->mtp3fd == -1) {
-		link->mtp3fd = mtp3_connect_socket(link->mtp3server_host, *link->mtp3server_port ? link->mtp3server_port : "11999");
-		if (link->mtp3fd != -1)
-		  res = mtp3_register_isup(link->mtp3fd, link->linkix);
-		else
-		  poll(NULL, 0, 5000);
-		if ((link->mtp3fd == -1) || (res == -1))
-		  rebuild_fds += 2;
+	    for (l = 0; l < this_host->spans[k].n_links; l++) {
+	      if ((this_host->spans[k].links[l] == link) ||
+		  (this_host->spans[k].links[l]->linkset == link->linkset) ||
+		  (is_combined_linkset(this_host->spans[k].links[l]->linkset, link->linkset))) {
+		if (link->remote) {
+		  if (link->mtp3fd == -1) {
+		    link->mtp3fd = mtp3_connect_socket(link->mtp3server_host, *link->mtp3server_port ? link->mtp3server_port : "11999");
+		    if (link->mtp3fd != -1)
+		      res = mtp3_register_isup(link->mtp3fd, link->linkix);
+		    else
+		      poll(NULL, 0, 5000);
+		    if ((link->mtp3fd == -1) || (res == -1))
+		      rebuild_fds += 2;
+		  }
+		  fds[n_fds].fd = link->mtp3fd;
+		  fds[n_fds++].events = POLLIN|POLLERR|POLLNVAL|POLLHUP;
+		}
 	      }
-	      fds[n_fds].fd = link->mtp3fd;
-	      fds[n_fds++].events = POLLIN|POLLERR|POLLNVAL|POLLHUP;
 	    }
 	  }
 	}

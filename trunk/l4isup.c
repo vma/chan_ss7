@@ -415,6 +415,7 @@ static void mtp_enqueue_isup_packet(struct link* link, int cic, unsigned char *m
     lsi = slink->linkset->lsi;
   else
     lsi = linkset->lsi;
+  memset(req, 0, sizeof(*req));
   req->typ = reqtyp;
   req->isup.slink = slink;
   req->isup.link = link;
@@ -4807,41 +4808,44 @@ void l4isup_event(struct mtp_event* event)
 
 
 int isup_init(void) {
-  int i;
+  int i, l;
 
   /* Configure CIC ranges, specified in 'channel' lines. */
-  ast_log(LOG_DEBUG, "Links %d, host %s \n", this_host->n_spans, this_host->name);
+  ast_log(LOG_DEBUG, "Spans %d, host %s \n", this_host->n_spans, this_host->name);
   for (i = 0; i < this_host->n_spans; i++) {
-    struct link* link = this_host->spans[i].link;
-    int connector = this_host->spans[i].connector;
-    int firstcic = link->first_cic;
-    int c;
-    if (!link->enabled)
-      continue;
-    ast_log(LOG_DEBUG, "New CIC, first_zapid %d, channelmask 0x%08lx, connector %d, firstcic %d, schannel 0x%04x \n", link->first_zapid, link->channelmask, connector, firstcic, link->schannel.mask);
-    for (c = 0; c < 31; c++) {
-      if (link->channelmask & (1 << c)) {
-	int cic = firstcic + c;
-	/* channel to zap id mapping:
-	   1 -> 1, 2 -> 2, 3 -> 3, ...
-	   32-> none
-	   33 -> 32, 34 -> 33, 35 -> 34, ...
-	   64-> none
-	   65 -> 63, 66 -> 64, 67 -> 65, ...
-	   96-> none
-	   97 -> 94, 98 -> 95, 99 -> 96, ...
-	   128-> none */
-	if ((1<<c) & link->schannel.mask) {
-	  ast_log(LOG_ERROR, "Error: Zap channel %d is used for SS7 signalling, "
-		  "hence cannot be allocated for a CIC.\n", c+1);
-	  return -1;
-	}
-	if(link->linkset->cic_list[cic] != NULL) {
-	  ast_log(LOG_ERROR, "Overlapping CIC=%d, aborting.\n", cic);
-	  return -1;
-	}            
-	if(setup_cic(link, c)) {
-	  return -1;
+    ast_log(LOG_DEBUG, "Span %d, links %d, host %s \n", i+1, this_host->spans[i].n_links, this_host->name);
+    for (l = 0; l < this_host->spans[i].n_links; l++) {
+      struct link* link = this_host->spans[i].links[l];
+      int connector = this_host->spans[i].connector;
+      int firstcic = link->first_cic;
+      int c;
+      if (!link->enabled)
+	continue;
+      ast_log(LOG_DEBUG, "New CICs, span %d, link %d, first_zapid %d, channelmask 0x%08lx, connector %d, firstcic %d, schannel 0x%08ux \n", i+1, l+1, link->first_zapid, link->channelmask, connector, firstcic, link->schannel.mask);
+      for (c = 0; c < 31; c++) {
+	if (link->channelmask & (1 << c)) {
+	  int cic = firstcic + c;
+	  /* channel to zap id mapping:
+	     1 -> 1, 2 -> 2, 3 -> 3, ...
+	     32-> none
+	     33 -> 32, 34 -> 33, 35 -> 34, ...
+	     64-> none
+	     65 -> 63, 66 -> 64, 67 -> 65, ...
+	     96-> none
+	     97 -> 94, 98 -> 95, 99 -> 96, ...
+	     128-> none */
+	  if ((1<<c) & link->schannel.mask) {
+	    ast_log(LOG_ERROR, "Error: Zap channel %d is used for SS7 signalling, "
+		    "hence cannot be allocated for a CIC.\n", c+1);
+	    return -1;
+	  }
+	  if(link->linkset->cic_list[cic] != NULL) {
+	    ast_log(LOG_ERROR, "Overlapping CIC=%d, aborting.\n", cic);
+	    return -1;
+	  }            
+	  if(setup_cic(link, c)) {
+	    return -1;
+	  }
 	}
       }
     }
@@ -4849,27 +4853,35 @@ int isup_init(void) {
 
   /* Configure all links that are on our linksets */
   for (i = 0; i < this_host->n_spans; i++) {
-    struct linkset* linkset = this_host->spans[i].link->linkset;
-    int li;
-    for(li = 0; li < linkset->n_links; li++) {
-      struct link* link = linkset->links[li];
-      int c;
-      for (c = 0; c < 32; c++) {
-	int cic = link->first_cic + c;
-	struct ss7_chan* pvt;
-	if (linkset->cic_list[cic])
-	  continue;
-	if (link->channelmask & (1 << c)) {
-	  pvt = malloc(sizeof(*pvt));
-	  if(pvt == NULL) {
-	    ast_log(LOG_ERROR, "Out of memory allocating %zu bytes.\n", sizeof(*pvt));
-	    return -1;
+    for (l = 0; l < this_host->spans[i].n_links; l++) {
+      struct linkset* slinkset = this_host->spans[i].links[l]->linkset;
+      int lsi;
+      for (lsi = 0; lsi < n_linksets; lsi++) {
+	struct linkset* linkset = &linksets[lsi];
+	if (is_combined_linkset(slinkset, linkset)) {
+	  int li;
+	  for(li = 0; li < linkset->n_links; li++) {
+	    struct link* link = linkset->links[li];
+	    int c;
+	    for (c = 0; c < 32; c++) {
+	      int cic = link->first_cic + c;
+	      struct ss7_chan* pvt;
+	      if (linkset->cic_list[cic])
+		continue;
+	      if (link->channelmask & (1 << c)) {
+		pvt = malloc(sizeof(*pvt));
+		if(pvt == NULL) {
+		  ast_log(LOG_ERROR, "Out of memory allocating %zu bytes.\n", sizeof(*pvt));
+		  return -1;
+		}
+		init_pvt(pvt, cic);
+		ast_log(LOG_DEBUG, "Configuring peers CIC %d on linkset '%s'\n", cic, linkset->name);
+		linkset->cic_list[cic] = pvt;
+		pvt->link = link;
+		pvt->equipped = 0;
+	      }
+	    }
 	  }
-	  init_pvt(pvt, cic);
-	  ast_log(LOG_DEBUG, "Configuring peers CIC %d on linkset '%s'\n", cic, linkset->name);
-	  linkset->cic_list[cic] = pvt;
-	  pvt->link = link;
-	  pvt->equipped = 0;
 	}
       }
     }

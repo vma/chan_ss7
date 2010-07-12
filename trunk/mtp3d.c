@@ -261,19 +261,21 @@ void l4isup_event(struct mtp_event* event)
     int opc = isup_msg.opc;
     int dpc = isup_msg.dpc;
     int cic = isup_msg.cic;
-    int i, n;
+    int i, n, l;
     struct linkset* linkset = event->isup.slink->linkset;
     ast_log(LOG_DEBUG, "ISUP event, OPC=%d, DPC=%d, CIC=%d, typ=%s\n", opc, dpc,  cic, isupmsg(isup_msg.typ));
     for (n = 0; n < n_registry; n++) {
       if (registry[n].ss7_protocol == SS7_PROTO_ISUP) {
 	struct host* host = lookup_host_by_id(registry[n].host_ix);
 	for (i = 0; i < host->n_spans; i++) {
-	  struct link* link = host->spans[i].link;
-	  if (link->linkset == linkset) {
-	    if ((link->first_cic <= cic) && (link->first_cic+32 > cic)) {
-	      event->isup.slinkix = event->isup.slink->linkix;
-	      mtp3_reply(registry[n].peerfd, (void*) event, sizeof(*event)+event->len, (const struct sockaddr*) &registry[n].client, sizeof(registry[n].client));
-	      return;
+	  for (l = 0; l < host->spans[i].n_links; l++) {
+	    struct link* link = host->spans[i].links[l];
+	    if (link->linkset == linkset) {
+	      if ((link->first_cic <= cic) && (link->first_cic+32 > cic)) {
+		event->isup.slinkix = event->isup.slink->linkix;
+		mtp3_reply(registry[n].peerfd, (void*) event, sizeof(*event)+event->len, (const struct sockaddr*) &registry[n].client, sizeof(registry[n].client));
+		return;
+	      }
 	    }
 	  }
 	}

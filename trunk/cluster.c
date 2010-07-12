@@ -154,9 +154,12 @@ static void declare_host_state(struct host* host, alivestate state)
       }
       if (isup_block_handler) {
 	for (i = 0; i < host->n_spans; i++) {
-	  struct link* link = host->spans[i].link;
-	  if (link->enabled)
-	    (*isup_block_handler)(link);
+	  int l;
+	  for (l = 0; l < this_host->spans[i].n_links; l++) {
+	    struct link* link = host->spans[i].links[l];
+	    if (link->enabled)
+	      (*isup_block_handler)(link);
+	  }
 	}
       }
       ast_log(LOG_WARNING, "No alive signal from %s, assumed down.\n", host->name);
@@ -296,13 +299,15 @@ int cluster_receivers_alive(struct linkset* linkset)
     for (i = 0; i < this_host->n_receivers; i++) {
       for (j = 0; j < this_host->receivers[i].n_targets; j++) {
 	struct host* host = this_host->receivers[i].targets[j].host;
-	int l;
+	int k, l;
 	if (host->state != STATE_ALIVE)
 	  continue;
-	for (l = 0; l < host->n_spans; l++) {
-	  struct link* link = host->spans[l].link;
-	  if (link->schannel.mask)
-	    return 1;
+	for (k = 0; k < host->n_spans; k++) {
+	  for (l = 0; l < host->spans[k].n_links; l++) {
+	    struct link* link = host->spans[k].links[l];
+	    if (link->schannel.mask)
+	      return 1;
+	  }
 	}
       }
     }
@@ -828,11 +833,13 @@ int cluster_init(void (*isup_event_handler_callback)(struct mtp_event*),
   for (i = 0; i < this_host->n_receivers; i++) {
     for (j = 0; j < this_host->receivers[i].n_targets; j++) {
       struct host* host = this_host->receivers[i].targets[j].host;
-      int l;
-      for (l = 0; l < host->n_spans; l++) {
-	struct link* link = host->spans[l].link;
-	if (link->schannel.mask)
-	  this_host->has_signalling_receivers = 1;
+      int l, k;
+      for (k = 0; k < host->n_spans; k++) {
+	for (l = 0; l < host->spans[k].n_links; l++) {
+	  struct link* link = host->spans[k].links[l];
+	  if (link->schannel.mask)
+	    this_host->has_signalling_receivers = 1;
+	}
       }
     }
   }
