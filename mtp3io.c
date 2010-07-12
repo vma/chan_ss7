@@ -182,6 +182,7 @@ int mtp3_register_isup(int s, int linkix)
   struct mtp_req* req = (struct mtp_req *)buff;
   int res;
 
+  memset(req, 0, sizeof(*req));
   req->isup.link = NULL;
   req->isup.slink = NULL;
   req->typ = MTP_REQ_REGISTER_L4;
@@ -202,6 +203,7 @@ int mtp3_register_sccp(int s, int subsystem, int linkix)
   struct mtp_req* req = (struct mtp_req *)buff;
   int res;
 
+  memset(req, 0, sizeof(*req));
   req->isup.link = NULL;
   req->isup.slink = NULL;
   req->typ = MTP_REQ_REGISTER_L4;

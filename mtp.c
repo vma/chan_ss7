@@ -440,6 +440,7 @@ static void fifo_log(mtp2_t *m, int level, const char *file, int line,
   unsigned char buf[MTP_EVENT_MAX_SIZE];
   struct mtp_event *event = (struct mtp_event *)buf;
 
+  memset(event, 0, sizeof(*event));
   event->typ = MTP_EVENT_LOG;
   event->log.level = level;
   event->log.file = file;
@@ -456,6 +457,7 @@ static void log_frame(mtp2_t *m, int out, unsigned char *buf, int len) {
   unsigned char ebuf[MTP_EVENT_MAX_SIZE];
   struct mtp_event *event = (struct mtp_event *)ebuf;
 
+  memset(event, 0, sizeof(*event));
   event->typ = MTP_EVENT_DUMP;
   event->dump.out = out;
   gettimeofday(&event->dump.stamp, NULL);
@@ -473,6 +475,7 @@ static void mtp2_dump_raw(mtp2_t *m, unsigned char *buf, int len, int out) {
   unsigned char ebuf[MTP_EVENT_MAX_SIZE];
   struct mtp_event *event = (struct mtp_event *)ebuf;
 
+  memset(event, 0, sizeof(*event));
   event->typ = MTP_EVENT_RAWDUMP;
   event->rawdump.out = out;
   if(sizeof(struct mtp_event) + len > MTP_MAX_PCK_SIZE) {
@@ -698,6 +701,7 @@ static void mtp3_link_fail(mtp2_t *m, int down) {
 
   /* Notify user-parts. */
   if(old_state == MTP2_INSERVICE) {
+    memset(&link_up_event, 0, sizeof(link_up_event));
     link_up_event.typ = MTP_EVENT_STATUS;
     link_up_event.status.link_state = MTP_EVENT_STATUS_LINK_DOWN;
     link_up_event.status.link = m->link;
@@ -768,10 +772,12 @@ static void mtp2_cleanup(mtp2_t *m)
   t17_stop(m);
 }
 
-static void deliver_l4(mtp2_t *m, unsigned char *sif, int len, int sio) {
+static void deliver_l4(mtp2_t *m, unsigned char *sif, int len, int sio)
+{
   unsigned char ebuf[MTP_EVENT_MAX_SIZE];
   struct mtp_event *event = (struct mtp_event *)ebuf;
 
+  memset(event, 0, sizeof(*event));
   if (sio == MTP_EVENT_ISUP) {
     event->isup.link = NULL;
     event->isup.slink = m->link;
@@ -1117,6 +1123,7 @@ static void l4up(mtp2_t* m)
   m->level4_up = 1;
   if (m->state == MTP2_INSERVICE) {
     /* Tell user part about the successful link activation. */
+    memset(&link_up_event, 0, sizeof(link_up_event));
     link_up_event.typ = MTP_EVENT_STATUS;
     link_up_event.status.link_state = MTP_EVENT_STATUS_LINK_UP;
     link_up_event.status.link = m->link;
@@ -1132,6 +1139,7 @@ static void l4down(mtp2_t* m)
   if (!m->level4_up)
     return;
   m->level4_up = 0;
+  memset(&link_down_event, 0, sizeof(link_down_event));
   link_down_event.typ = MTP_EVENT_STATUS;
   link_down_event.status.link_state = MTP_EVENT_STATUS_LINK_DOWN;
   link_down_event.status.link = m->link;
@@ -2386,6 +2394,7 @@ int mtp_init(void) {
     struct mtp_event link_up_event;
     int lsi;
     /* Tell user part MTP is now INSERVICE. */
+    memset(&link_up_event, 0, sizeof(link_up_event));
     link_up_event.typ = MTP_EVENT_STATUS;
     link_up_event.status.link_state = MTP_EVENT_STATUS_INSERVICE;
     for (lsi = 0; lsi < n_linksets; lsi++) {

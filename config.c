@@ -170,30 +170,32 @@ static struct link* lookup_link(const char* name) {
 
 static int make_group_linksets(void)
 {
-  int j, k;
+  int j, k, l;
 
   for (k = 0, j = 0; k < this_host->n_spans; k++) {
-    struct link* link = this_host->spans[k].link;
-    struct linkset* linkset = link->linkset;
-    int lsi;
-    if (link->enabled && linkset->enabled) {
-      if (linkset->group && *linkset->group) {
-	linkset->group_linkset = lookup_linkset_for_group(linkset->group, 0);
-	for (lsi = 0; lsi < n_linksets; lsi++) {
-	  struct linkset* ls = &linksets[lsi];
-	  if (ls->group && !strcmp(linkset->group, ls->group)) {
-	    if (linkset->hunt_policy != ls->hunt_policy) {
-	      ast_log(LOG_ERROR, "Linksets %s and %s in group %s have different hunting policies\n", linkset->name, ls->name, linkset->group);
-	      return -1;
+    for (l = 0; l < this_host->spans[k].n_links; l++) {
+      struct link* link = this_host->spans[k].links[l];
+      struct linkset* linkset = link->linkset;
+      int lsi;
+      if (link->enabled && linkset->enabled) {
+	if (linkset->group && *linkset->group) {
+	  linkset->group_linkset = lookup_linkset_for_group(linkset->group, 0);
+	  for (lsi = 0; lsi < n_linksets; lsi++) {
+	    struct linkset* ls = &linksets[lsi];
+	    if (ls->group && (!strcmp(linkset->group, ls->group))) {
+	      if (linkset->hunt_policy != ls->hunt_policy) {
+		ast_log(LOG_ERROR, "Linksets %s and %s in group %s have different hunting policies\n", linkset->name, ls->name, linkset->group);
+		return -1;
+	      }
 	    }
 	  }
-}
+	}
+	else
+	  linkset->group_linkset = linkset;
       }
-      else
-	linkset->group_linkset = linkset;
-   }
+    }
   }
-   return 0;
+  return 0;
 }
 
 static struct host* lookup_host(const char* name) {
@@ -223,7 +225,7 @@ struct host* lookup_host_by_id(int hostix)
 
 static int make_host_slinks(void)
 {
-  int k;
+  int k, l;
 
   struct link* llink = NULL;
   if (this_host->n_spans == 0) {
@@ -232,14 +234,16 @@ static int make_host_slinks(void)
   }
 
   for (k = 0; k < this_host->n_spans; k++) {
-    struct link* link = this_host->spans[k].link;
-    int connector = this_host->spans[k].connector;
-    link->first_zapid = (connector-1) * timeslots(link) - (connector-1);
-    if (link->enabled) {
-      llink = link;
-      if ((link->schannel.mask != 0) && (!link->remote)) {
-	link->slinkix = this_host->n_slinks;
-	this_host->slinks[this_host->n_slinks++] = link;
+    for (l = 0; l < this_host->spans[k].n_links; l++) {
+      struct link* link = this_host->spans[k].links[l];
+      int connector = this_host->spans[k].connector;
+      link->first_zapid = (connector-1) * timeslots(link) - (connector-1);
+      if (link->enabled) {
+	llink = link;
+	if ((link->schannel.mask != 0) && (!link->remote)) {
+	  link->slinkix = this_host->n_slinks;
+	  this_host->slinks[this_host->n_slinks++] = link;
+	}
       }
     }
   }
@@ -466,6 +470,8 @@ static int load_config_linkset(struct ast_config *cfg, const char* cat)
 	ast_log(LOG_ERROR, "Invalid value '%s' for dpc for linkset '%s'.\n", v->value, linkset_name);
 	return -1;
       }
+    } else if(0 == strcasecmp(v->name, "gt")) {
+    } else if(0 == strcasecmp(v->name, "transport")) {
     } else {
       ast_log(LOG_ERROR, "Unknown config option '%s', aborting.\n", v->name);
       return -1;
@@ -475,7 +481,7 @@ static int load_config_linkset(struct ast_config *cfg, const char* cat)
   }
 
   if (!has_hunt_policy) {
-    ast_log(LOG_ERROR, "Missing hunt_policy entry for linkset '%s'\n", linkset_name);
+    ast_log(LOG_ERROR, "Missing hunting_policy entry for linkset '%s'\n", linkset_name);
     return -1;
   }
   if (!has_use_connect) {
@@ -501,7 +507,7 @@ static int load_config_linkset(struct ast_config *cfg, const char* cat)
   linkset->n_links = 0;
   linkset->lsi = n_linksets;
   linkset->init_grs_done = 0;
-  linkset->first_cic = MAX_CIC;
+  linkset->first_cic = MAX_CIC+1;
   linkset->last_cic = 0;
   linkset->init_grs_done = 0;
   linkset->idle_list = NULL;
@@ -523,7 +529,7 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
   struct linkset* linkset = NULL;
   struct link* link = &links[n_links];
   int i;
-  int lastcic = 0;
+  int firstcic = 0x7ffffff, lastcic = 0;
 
   int has_linkset = 0, has_firstcic = 0, has_channels = 0, has_schannel = 0, has_sls = 0;
 
@@ -538,6 +544,7 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
 
   link->enabled = 1;
   link->iftype = INTERFACE_TYPE_E1;
+  link->first_cic = MAX_CIC+1;
   link->schannel.mask = 0;
   link->n_schannels = 0;
   link->slinkix = -1;
@@ -639,17 +646,18 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
       p = strsep(&spec, ",");
       while(p && *p) {
 	int i, first, last;
-	if(sscanf(p, "%d-%d", &first, &last) != 2 ||
-	   first < 0 || first > last || last > 31) {
-	  ast_log(LOG_DEBUG, "Channel range '%s' is %d %d \n", p, first,last);
+	if((sscanf(p, "%d-%d", &first, &last) == 2) && (first > 0 && first <= last && last <= 31)) {
+	}
+	else if((sscanf(p, "%d", &first) == 1) && (first > 0 && first <= 31)) {
+	  last = first;
+	}
+	else {
 	  ast_log(LOG_ERROR, "Illegal channel range '%s' for "
 		  "channel specification for link '%s'.\n", p, link_name);
 	  return -1;
 	}
 	for (i = first; i <= last; i++)
 	  link->channelmask |= 1 << (i-1);
-	if (last > lastcic)
-	  lastcic = last;
 	p = strsep(&spec, ",");
       }
       has_channels = 1;
@@ -741,6 +749,9 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
 	ast_log(LOG_ERROR, "Invalid value '%s' for stp for link '%s'.\n", v->value, link_name);
 	return -1;
       }
+    } else if(0 == strcasecmp(v->name, "rc")) {
+    } else if(0 == strcasecmp(v->name, "bandwidth")) {
+    } else if (strcasecmp(v->name, "erlang") == 0) {
     } else {
       ast_log(LOG_ERROR, "Unknown config option '%s', aborting.\n", v->name);
       return -1;
@@ -752,8 +763,10 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
     return -1;
   }
   if (!has_firstcic) {
-    ast_log(LOG_ERROR, "Missing firstcic entry for link '%s'.\n", link_name);
-    return -1;
+    if (link->channelmask) {
+      ast_log(LOG_ERROR, "Missing firstcic entry for link '%s'.\n", link_name);
+      return -1;
+    }
   }
   if (!has_channels) {
     ast_log(LOG_ERROR, "Missing channels entry for link '%s'.\n", link_name);
@@ -791,9 +804,17 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
     }
   }
   ast_log(LOG_NOTICE, "%s link '%s' on linkset '%s', firstcic=%d\n", link->enabled ? "Configured" : "Ignoring disabled", link->name, linkset->name, link->first_cic);
-  if (linkset->first_cic > link->first_cic)
-    linkset->first_cic = link->first_cic;
-  lastcic = link->first_cic + lastcic -1;
+  for (i = 1; i <= 31; i++) {
+    if (link->channelmask & (1 << (i-1))) {
+      int cic = link->first_cic + i - 1;
+      if (cic > lastcic)
+	lastcic = cic;
+      if (cic < firstcic)
+	firstcic = cic;
+    }
+  }
+  if (linkset->first_cic > firstcic)
+    linkset->first_cic = firstcic;
   if (linkset->last_cic < lastcic)
     linkset->last_cic = lastcic;
   link->linkix = n_links;
@@ -810,6 +831,7 @@ static int load_config_host(struct ast_config *cfg, const char* cat)
   const char *host_name = &cat[strlen("host-")];
   struct host* host = &hosts[n_hosts];
   char links_spec_buf[1000] = {0,};
+  int i, j, l;
   int has_links = 0, has_enabled = 0, has_if = 0;
 
   if (n_hosts == MAX_HOSTS) {
@@ -927,8 +949,8 @@ static int load_config_host(struct ast_config *cfg, const char* cat)
       p = strsep(&spec, ",");
       while(p && *p) {
 	char linkname_buf[100];
-	int i;
-	if (host->n_spans == MAX_SPANS_PER_HOST) {
+	struct link* link = NULL;
+	if (host->n_spans == MAX_LINKS_PER_HOST) {
 	  ast_log(LOG_ERROR, "Too many links defined for host '%s' (max %d).\n", host->name, MAX_LINKS_PER_HOST);
 	  return -1;
 	}
@@ -942,23 +964,24 @@ static int load_config_host(struct ast_config *cfg, const char* cat)
 	  return -1;
 	}
 	ast_log(LOG_DEBUG, "linkname '%s', no %d \n", linkname_buf, host->spans[host->n_spans].connector);
-	for (i = 0; i < host->n_spans; i++) {
-	  if (host->spans[i].connector == host->spans[host->n_spans].connector) {
-	    ast_log(LOG_ERROR, "Connector no. %d specified twice for host '%s.'\n", host->spans[host->n_spans].connector, host->name);
-	    return -1;
-	  }
-	}
-	host->spans[host->n_spans].link = lookup_link(linkname_buf);
-	if (!host->spans[host->n_spans].link) {
+	link = lookup_link(linkname_buf);
+	if (!link) {
 	  ast_log(LOG_ERROR, "Link '%s' not found while parsing host '%s'.\n", linkname_buf, host_name);
 	  return -1;
 	}
-	if (host->spans[host->n_spans].link->on_host) {
-	  ast_log(LOG_ERROR, "Link '%s' belongs to both  host '%s' and '%s'.\n", linkname_buf, host_name, host->spans[host->n_spans].link->on_host->name);
+	if (link->on_host) {
+	  ast_log(LOG_ERROR, "Link '%s' belongs to both  host '%s' and '%s'.\n", linkname_buf, host_name, host->spans[i].links[l]->on_host->name);
 	  return -1;
 	}
-	host->spans[host->n_spans].link->on_host = host;
-	host->n_spans++;
+	for (i = 0; i < host->n_spans; i++, l = 0) {
+	  if (host->spans[i].connector == host->spans[host->n_spans].connector) {
+	    break;
+	  }
+	}
+	if (i == host->n_spans)
+	  host->n_spans++;
+	link->on_host = host;
+	host->spans[i].links[host->spans[i].n_links++] = link;
 	ast_log(LOG_DEBUG, "host n_spans %d \n", host->n_spans);
 	p = strsep(&spec, ",");
       }
@@ -1026,6 +1049,26 @@ static int load_config_host(struct ast_config *cfg, const char* cat)
     }
     v = v->next;
   }
+  for (i = 0; i < host->n_spans; i++, l = 0) {
+    for (j = 0; l < host->spans[i].n_links; j++) {
+      struct link* link = host->spans[i].links[j];
+      for (l = j+1; l < host->spans[i].n_links; l++) {
+	struct link* link1 = host->spans[i].links[l];
+	unsigned int m = (link->schannel.mask & link1->schannel.mask);
+	if (!link->enabled || !link->linkset->enabled || !link1->enabled || !link1->linkset->enabled)
+	  continue;
+	if (m != 0) {
+	  ast_log(LOG_ERROR, "Connector no. %d specified twice for host '%s.' with overlapping signaling time slots: mask: 0x%08x, links: %s and %s\n", host->spans[host->n_spans].connector, host->name, m, link->name, link1->name);
+	  return -1;
+	}
+	m = (link->channelmask & link1->channelmask);
+	if (m != 0) {
+	  ast_log(LOG_ERROR, "Connector no. %d specified twice for host '%s.' with overlapping CIC time slots: mask: 0x%08x\n", host->spans[host->n_spans].connector, host->name, m);
+	  return -1;
+	}
+      }
+    }
+  }
   if (!has_links) {
     ast_log(LOG_ERROR, "Missing links entry for host '%s'.\n", host_name);
     return -1;
@@ -1051,7 +1094,7 @@ static int load_config_cluster(struct ast_config *cfg)
   struct link* link;
   struct host* host;
   struct receiver* receiver;
-  int i, j;
+  int i, j, l;
   char *p;
 
   char *spec;
@@ -1076,9 +1119,11 @@ static int load_config_cluster(struct ast_config *cfg)
     host = NULL;
     for (i = 0; i < n_hosts; i++) {
       for (j = 0; j < hosts[i].n_spans; j++) {
-	if (hosts[i].spans[j].link == link) {
-	  host = &hosts[i];
-	  break;
+	for (l = 0; l < host->spans[j].n_links; l++) {
+	  if (hosts[i].spans[j].links[l] == link) {
+	    host = &hosts[i];
+	    break;
+	  }
 	}
       }
     }
@@ -1158,7 +1203,7 @@ int load_config(int reload)
   struct ast_config *cfg;
   static const char conffile_name[] = "ss7.conf";
   const char* prevcat = NULL;
-  int i, j, k;
+  int i, j, k, l;
 
 #if defined(USE_ASTERISK_1_2) ||  defined(USE_ASTERISK_1_4)
   cfg = ast_config_load(conffile_name);
@@ -1228,19 +1273,23 @@ int load_config(int reload)
     int any = 0;
     if (!linksets[i].enabled)
       continue;
-    for (j = 0; j < linksets[i].n_links; j++)
-      for (k = 0; k < this_host->n_spans; k++)
-	if (this_host->spans[k].link == linksets[i].links[j]) {
-	  if (!linksets[i].opc) {
-	    ast_log(LOG_ERROR, "No OPC specified for linkset '%s'.\n", linksets[i].name);
-	    goto fail;
+    for (j = 0; j < linksets[i].n_links; j++) {
+      for (k = 0; k < this_host->n_spans; k++) {
+	for (l = 0; l < this_host->spans[k].n_links; l++) {
+	  if (this_host->spans[k].links[l] == linksets[i].links[j]) {
+	    if (!linksets[i].opc) {
+	      ast_log(LOG_ERROR, "No OPC specified for linkset '%s'.\n", linksets[i].name);
+	      goto fail;
+	    }
+	    if (!linksets[i].dpc) {
+	      ast_log(LOG_ERROR, "No DPC specified for linkset '%s'.\n", linksets[i].name);
+	      goto fail;
+	    }
+	    any = any || linksets[i].links[j]->enabled;
 	  }
-	  if (!linksets[i].dpc) {
-	    ast_log(LOG_ERROR, "No DPC specified for linkset '%s'.\n", linksets[i].name);
-	    goto fail;
-	  }
-	  any = any || linksets[i].links[j]->enabled;
 	}
+      }
+    }
     linksets[i].enabled = any;
     ast_log(LOG_DEBUG, "Setting linkset %d '%s' enabled %d\n", i, linksets[i].name, any);
   }
@@ -1251,9 +1300,11 @@ int load_config(int reload)
   if (this_host->default_linkset) {
     int haslinkset = 0;
     for (k = 0; k < this_host->n_spans; k++) {
-      if (this_host->spans[k].link->enabled && this_host->spans[k].link->linkset->enabled &&
-	  (this_host->spans[k].link->linkset == this_host->default_linkset))
-	haslinkset = 1;
+      for (l = 0; l < this_host->spans[k].n_links; l++) {
+	if (this_host->spans[k].links[l]->enabled && this_host->spans[k].links[l]->linkset->enabled &&
+	    (this_host->spans[k].links[l]->linkset == this_host->default_linkset))
+	  haslinkset = 1;
+      }
     }
     if (!haslinkset) {
       ast_log(LOG_ERROR, "Default linkset '%s' for host '%s' is not configured for this host!\n", this_host->default_linkset->name, this_host->name);
@@ -1263,12 +1314,14 @@ int load_config(int reload)
   else {
     struct linkset* linkset = NULL;
     for (k = 0; k < this_host->n_spans; k++) {
-      if (this_host->spans[k].link->linkset->enabled) {
-	if (linkset && (linkset != this_host->spans[k].link->linkset)) {
-	  ast_log(LOG_ERROR, "Host '%s' has multiple linksets, need to specify a default_linkset!\n", this_host->name);
-	  goto fail;
+      for (l = 0; l < this_host->spans[k].n_links; l++) {
+	if (this_host->spans[k].links[k]->linkset->enabled) {
+	  if (linkset && (linkset != this_host->spans[k].links[l]->linkset)) {
+	    ast_log(LOG_ERROR, "Host '%s' has multiple linksets, need to specify a default_linkset!\n", this_host->name);
+	    goto fail;
+	  }
+	  linkset = this_host->spans[k].links[l]->linkset;
 	}
-	linkset = this_host->spans[k].link->linkset;
       }
     }
     this_host->default_linkset = linkset;
