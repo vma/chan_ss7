@@ -1315,15 +1315,16 @@ int load_config(int reload)
     struct linkset* linkset = NULL;
     for (k = 0; k < this_host->n_spans; k++) {
       for (l = 0; l < this_host->spans[k].n_links; l++) {
-	if (this_host->spans[k].links[k]->linkset->enabled) {
+	if (this_host->spans[k].links[l]->linkset->enabled) {
 	  if (linkset && (linkset != this_host->spans[k].links[l]->linkset)) {
-	    ast_log(LOG_ERROR, "Host '%s' has multiple linksets, need to specify a default_linkset!\n", this_host->name);
-	    goto fail;
+	    ast_log(LOG_ERROR, "Host '%s' has multiple linksets, no default_linkset specified, using '%s'\n", this_host->name, linkset->name);
+	    goto foundone;
 	  }
 	  linkset = this_host->spans[k].links[l]->linkset;
 	}
       }
     }
+  foundone:
     this_host->default_linkset = linkset;
   }
   if (make_host_slinks())
