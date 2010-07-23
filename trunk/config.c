@@ -1050,7 +1050,7 @@ static int load_config_host(struct ast_config *cfg, const char* cat)
     v = v->next;
   }
   for (i = 0; i < host->n_spans; i++, l = 0) {
-    for (j = 0; l < host->spans[i].n_links; j++) {
+    for (j = 0; j < host->spans[i].n_links; j++) {
       struct link* link = host->spans[i].links[j];
       for (l = j+1; l < host->spans[i].n_links; l++) {
 	struct link* link1 = host->spans[i].links[l];

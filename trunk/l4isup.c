@@ -4568,10 +4568,10 @@ static int set_gain(struct ss7_chan *pvt, float rx_gain, float tx_gain) {
 
 
 /* Initialize a struct ss7_chan. */
-static void init_pvt(struct ss7_chan *pvt, int cic) {
+static void init_pvt(struct ss7_chan *pvt, struct link* link, int cic) {
   pvt->owner = NULL;
   pvt->next_idle = NULL;
-  pvt->link = NULL;
+  pvt->link = link;
   pvt->cic = cic;
   pvt->reset_done = 0;
   pvt->blocked = 0;
@@ -4664,8 +4664,7 @@ static int setup_cic(struct link* link, int channel)
     ast_log(LOG_ERROR, "Out of memory allocating %zu bytes.\n", sizeof(*pvt));
     return -1;
   }
-  init_pvt(pvt, cic);
-  pvt->link = link;
+  init_pvt(pvt, link, cic);
   pvt->equipped = 1;
   if(ctxt != NULL) {
     ast_copy_string(pvt->context, ctxt, sizeof(pvt->context));
@@ -4874,10 +4873,9 @@ int isup_init(void) {
 		  ast_log(LOG_ERROR, "Out of memory allocating %zu bytes.\n", sizeof(*pvt));
 		  return -1;
 		}
-		init_pvt(pvt, cic);
+		init_pvt(pvt, link, cic);
 		ast_log(LOG_DEBUG, "Configuring peers CIC %d on linkset '%s'\n", cic, linkset->name);
 		linkset->cic_list[cic] = pvt;
-		pvt->link = link;
 		pvt->equipped = 0;
 	      }
 	    }
