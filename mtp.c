@@ -253,7 +253,7 @@ static void start_initial_alignment(mtp2_t *m, char* reason);
 static void abort_initial_alignment(mtp2_t *m);
 static void mtp2_cleanup(mtp2_t *m);
 static void mtp2_queue_msu(mtp2_t *m, int sio, unsigned char *sif, int len);
-static void deliver_l4(mtp2_t *m, unsigned char *sif, int len, int sio);
+static void deliver_l4(mtp2_t *m, int opc, int dpc, short slc, unsigned char *sif, int len, unsigned char sio);
 static void l4up(mtp2_t* m);
 static void l4down(mtp2_t* m);
 static void t7_stop(mtp2_t *m);
@@ -353,7 +353,7 @@ int cmd_mtp_data(int fd, int argc, char *argv[])
     }
   }
   mtp2_queue_msu(m, 3, buf, len);
-  deliver_l4(m, &buf[0], len, MTP_EVENT_SCCP);
+  deliver_l4(m, 0, 0, 0, &buf[0], len, MTP_EVENT_SCCP);
   return 0;
 }
 
@@ -772,18 +772,24 @@ static void mtp2_cleanup(mtp2_t *m)
   t17_stop(m);
 }
 
-static void deliver_l4(mtp2_t *m, unsigned char *sif, int len, int sio)
+static void deliver_l4(mtp2_t *m, int opc, int dpc, short slc, unsigned char *sif, int len, unsigned char sio)
 {
   unsigned char ebuf[MTP_EVENT_MAX_SIZE];
   struct mtp_event *event = (struct mtp_event *)ebuf;
 
   memset(event, 0, sizeof(*event));
   if (sio == MTP_EVENT_ISUP) {
+    event->isup.opc = opc;
+    event->isup.dpc = dpc;
+    event->isup.slc = slc;
     event->isup.link = NULL;
     event->isup.slink = m->link;
     event->isup.slinkix = m->link->linkix;
   }
   else{
+    event->sccp.opc = opc;
+    event->sccp.dpc = dpc;
+    event->sccp.slc = slc;
     event->sccp.slink = m->link;
     event->sccp.slinkix = m->link->linkix;
   }
@@ -1501,10 +1507,10 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
     break;
 
   case SS7_PROTO_SCCP:
-    deliver_l4(m, &(buf[4]), (li == 63 ? len - 4 : li - 1), MTP_EVENT_SCCP);
+    deliver_l4(m, opc, dpc, slc, &(buf[4]), (li == 63 ? len - 4 : li - 1), MTP_EVENT_SCCP);
     break;
   case SS7_PROTO_ISUP:
-    deliver_l4(m, &(buf[4]), (li == 63 ? len - 4 : li - 1), MTP_EVENT_ISUP);
+    deliver_l4(m, opc, dpc, slc, &(buf[4]), (li == 63 ? len - 4 : li - 1), MTP_EVENT_ISUP);
     break;
   }
 }

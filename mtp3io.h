@@ -54,25 +54,31 @@ struct mtp_req {
 
   union {
     struct {
-      int slinkix;
+      int opc;
+      int dpc;
+      short slc;
+      short slinkix;
       struct link* slink;
       struct link* link;
     } isup;
     struct {
-      int slinkix;
+      int opc;
+      int dpc;
+      short slc;
+      short slinkix;
       struct link* slink;
     } sccp;
     struct {
-      int linkix;
-      int keepdown;
+      short linkix;
+      short keepdown;
     } link;
     struct {
-      int ss7_protocol;
-      int host_ix;
-      int linkix;
+      short ss7_protocol;
+      short host_ix;
+      short linkix;
       union {
 	struct {
-	  int subsystem;
+	  short subsystem;
 	} sccp;
       };
     } regist;
@@ -106,21 +112,27 @@ struct mtp_event {
 
   union {
     struct {
-      int slinkix;
+      int opc;
+      int dpc;
+      short slc;
+      short slinkix;
       struct link* slink;
       struct link* link;
     } isup;
     struct {
-      int slinkix;
+      int opc;
+      int dpc;
+      short slc;
+      short slinkix;
       struct link* slink;
     } sccp;
 
     struct {
-      int ss7_protocol;
-      int host_ix;
+      short ss7_protocol;
+      short host_ix;
       union {
 	struct {
-	  int slinkix;
+	  short slinkix;
 	} isup;
       };
     } regist;
@@ -134,8 +146,8 @@ struct mtp_event {
 
     struct {
       int out;                  /* True if sent packet, false if received */
-      struct timeval stamp;        /* Timestamp */
       int sls;		/* Signalling link selector */
+      struct timeval stamp;        /* Timestamp */
     } dump;
 
     struct {
