@@ -530,7 +530,6 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
   struct link* link = &links[n_links];
   int i;
   int firstcic = 0x7ffffff, lastcic = 0;
-
   int has_linkset = 0, has_firstcic = 0, has_channels = 0, has_schannel = 0, has_sls = 0;
 
   if (lookup_link(link_name)) {
@@ -782,7 +781,6 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
     return -1;
   }
   if (!has_sls) {
-    int i;
     for (i = 0; i < link->n_schannels; i++)
       link->sls[i] = linkset->n_schannels + i;
   }
@@ -804,6 +802,15 @@ static int load_config_link(struct ast_config *cfg, const char* cat)
     }
   }
   ast_log(LOG_NOTICE, "%s link '%s' on linkset '%s', firstcic=%d\n", link->enabled ? "Configured" : "Ignoring disabled", link->name, linkset->name, link->first_cic);
+  if (link->enabled) {
+    for (i = 0; i < 32; i++)
+      if (link->schannel.mask & (1<<i))
+	linkset->n_schannels++;
+    if (linkset->n_schannels > MAX_SCHANNELS_PER_LINKSET) {
+      ast_log(LOG_ERROR, "Too many schannels for linkset '%s', %d, max %d.\n", linkset->name, linkset->n_schannels, MAX_SCHANNELS_PER_LINKSET);
+      return -1;
+    }
+  }
   for (i = 1; i <= 31; i++) {
     if (link->channelmask & (1 << (i-1))) {
       int cic = link->first_cic + i - 1;
