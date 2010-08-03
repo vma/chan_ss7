@@ -172,10 +172,10 @@ static void *monitor_main(void *data) {
 	struct linkset* linkset = &linksets[i];
 	int j;
 	for (j = 0; j < linkset->n_links; j++) {
-	  int k, l;
+	  int k, l, f = 0;
 	  struct link* link = linkset->links[j];
-	  for (k = 0; k < this_host->n_spans; k++) {
-	    for (l = 0; l < this_host->spans[k].n_links; l++) {
+	  for (k = 0; (k < this_host->n_spans) && !f; k++) {
+	    for (l = 0; l < (this_host->spans[k].n_links) && !f; l++) {
 	      if ((this_host->spans[k].links[l] == link) ||
 		  (this_host->spans[k].links[l]->linkset == link->linkset) ||
 		  (is_combined_linkset(this_host->spans[k].links[l]->linkset, link->linkset))) {
@@ -191,6 +191,7 @@ static void *monitor_main(void *data) {
 		  }
 		  fds[n_fds].fd = link->mtp3fd;
 		  fds[n_fds++].events = POLLIN|POLLERR|POLLNVAL|POLLHUP;
+		  f = 1;
 		}
 	      }
 	    }
