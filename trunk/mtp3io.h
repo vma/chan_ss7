@@ -85,6 +85,9 @@ struct mtp_req {
     struct {
       unsigned char padding[32];
     } padding;
+    struct {
+      unsigned char padding[64];
+    } padding;
   };
 
   int len;
