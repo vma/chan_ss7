@@ -83,7 +83,7 @@ struct mtp_req {
       };
     } regist;
     struct {
-      unsigned char padding[64];
+      unsigned char padding[72];
     } padding;
   };
 
@@ -159,7 +159,7 @@ struct mtp_event {
       struct link* link;
     } status;
     struct {
-      unsigned char padding[32];
+      unsigned char padding[40];
     } padding;
   };
 
