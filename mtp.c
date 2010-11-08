@@ -1236,6 +1236,7 @@ static void mtp2_good_frame(mtp2_t *m, unsigned char *buf, int len) {
       if (subservice == -1)
         subservice = 0x8;
 
+      l4up(m);
       fifo_log(m, LOG_NOTICE, "Sending TRA to peer on link '%s'....\n", m->name);
       mtp3_put_label(m->sls, variant(m), peeropc(m), linkpeerdpc(m), message_tra);
       if(variant(m)==ITU_SS7) {
@@ -1255,9 +1256,6 @@ static void mtp2_good_frame(mtp2_t *m, unsigned char *buf, int len) {
 	}
 
 	m->sltm_t2 = mtp_sched_add(mtp2_sched, 61000, mtp3_send_sltm, m);
-      }
-      else {
-	l4up(m);
       }
     } else {
       return;

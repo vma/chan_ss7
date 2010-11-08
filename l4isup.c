@@ -626,7 +626,7 @@ static struct ss7_chan *cic_hunt_even_mru(struct linkset* linkset, int first_cic
     best->next_idle = NULL;
     return best;
   } else {
-    ast_log(LOG_WARNING, "No idle circuit found.\n");
+    ast_log(LOG_WARNING, "No idle circuit found, linkset=%s.\n", linkset->name);
     return NULL;
   }
 }
@@ -672,7 +672,7 @@ static struct ss7_chan *cic_hunt_seq_lth_htl(struct linkset* linkset, int lth, i
     best->next_idle = NULL;
     return best;
   } else {
-    ast_log(LOG_WARNING, "No idle circuit found.\n");
+    ast_log(LOG_WARNING, "No idle circuit found, linkset=%s.\n", linkset->name);
     return NULL;
   }
 }
@@ -1745,6 +1745,11 @@ static void handle_complete_address(struct ss7_chan *pvt)
     pbx_builtin_setvar_helper(chan, "__SS7_GENERIC_DNI", iam->gni.dni.num);
   if(iam->gni.rni.present)
     pbx_builtin_setvar_helper(chan, "__SS7_GENERIC_RNI", iam->gni.rni.num);
+  if (iam->trans_medium) {
+    char tmr[6];
+    snprintf(tmr, sizeof(tmr), "0x%02x", iam->trans_medium);
+    pbx_builtin_setvar_helper(chan, "__SS7_TMR", tmr);
+  }
 
   if (!pvt->link->linkset->use_connect) {
     isup_send_acm(pvt);
@@ -1998,6 +2003,7 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
   int res;
   const char *isdn_h324m;
   int h324m_usi=0, h324m_llc=0;
+  const char *strp;
 
   isdn_h324m = pbx_builtin_getvar_helper(chan, "ISDN_H324M");
   if (isdn_h324m) {
@@ -2035,11 +2041,24 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
   isup_msg_add_fixed(msg, sizeof(msg), &current, param, 1);
 
   /* Transmission medium requirement Q.763 (3.54). */
-  if (h324m_usi || h324m_llc) {
-    param[0] = 0x02; /* 64 kbit/s unrestricted */
-    pvt->is_digital = 1;
-  } else {
-    param[0] = 0x00; /* Speech */
+  strp = pbx_builtin_getvar_helper(chan, "SS7_TMR");
+  if (strp) {
+    /* Get transmission media value and make sure it is legal */
+    char *endptr;
+    unsigned long val = strtoul(strp, &endptr, 0);
+    if ((strp == endptr) || val < 0 || val > 255) {
+      ast_log(LOG_NOTICE, "Invalid transmedium requirement value '%ld' in SS7_TMR variable.\n", val);
+      param[0] = 0x00;
+    } else
+      param[0] = (unsigned char) val;
+  }
+  else {
+    if (h324m_usi || h324m_llc) {
+      param[0] = 0x02; /* 64 kbit/s unrestricted */
+      pvt->is_digital = 1;
+    } else {
+      param[0] = 0x00; /* Speech */
+    }
   }
   isup_msg_add_fixed(msg, sizeof(msg), &current, param, 1);
 
@@ -3371,6 +3390,22 @@ static void process_rsc(struct ss7_chan *pvt, struct isup_msg *inmsg)
   isup_send_rlc(pvt);	
 }
 
+/* Process block acknowledgement message */
+static void process_bla(struct ss7_chan *pvt, struct isup_msg *inmsg)
+{
+  /* Mark the circuit as blocked. */
+  pvt->blocked |= BL_LM;
+  t12_clear(pvt);
+}
+
+/* Process unblock acknowledgement message */
+static void process_uba(struct ss7_chan *pvt, struct isup_msg *inmsg)
+{
+  /* Mark the circuit as unblocked. */
+  pvt->blocked &= ~BL_LM;
+  t14_clear(pvt);
+}
+
 /* Process block message */
 static void process_blk(struct ss7_chan *pvt, struct isup_msg *inmsg)
 {
@@ -3870,6 +3905,14 @@ static void process_isup_message(struct link* slink, struct isup_msg *inmsg)
 
   case ISUP_COT:
     process_circuit_message(slink, inmsg, process_cot);
+    break;
+
+  case ISUP_BLA:
+    process_circuit_message(slink, inmsg, process_bla);
+    break;
+
+  case ISUP_UBA:
+    process_circuit_message(slink, inmsg, process_uba);
     break;
 
   case ISUP_GRS:
