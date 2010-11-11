@@ -21,6 +21,7 @@
  * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#pragma pack(push,4)
 
 #define MTP3_SOCKETTYPE SOCK_STREAM
 #define MTP3_IPPROTO IPPROTO_TCP
@@ -83,7 +84,7 @@ struct mtp_req {
       };
     } regist;
     struct {
-      unsigned char padding[72];
+      unsigned char padding[64];
     } padding;
   };
 
@@ -159,7 +160,7 @@ struct mtp_event {
       struct link* link;
     } status;
     struct {
-      unsigned char padding[40];
+      unsigned char padding[32];
     } padding;
   };
 
@@ -177,3 +178,4 @@ void mtp3_reply(int s, const unsigned char* buff, unsigned int len, const struct
 int mtp3_register_isup(int s, int linkix);
 int mtp3_register_sccp(int s, int subsystem, int linkix);
 
+#pragma pack(pop)
