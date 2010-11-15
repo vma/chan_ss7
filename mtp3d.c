@@ -653,8 +653,10 @@ static void setsigactions(void)
 static int setup_daemon(void)
 {
   if (do_fork) {
-    if (!daemon(0, 1))
-      fprintf(stderr, "daemon returned error: %d: %s\n", errno, strerror(errno));
+    if (daemon(0, 1)) {
+      fprintf(stderr, "daemon returned error: %d: %s, exiting\n", errno, strerror(errno));
+      exit(1);
+    }
   }
   setsigactions();
   return 0;
