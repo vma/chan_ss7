@@ -63,6 +63,7 @@ enum isup_parameter_code {
   IP_CALLING_PARTYS_CATEGORY = 0x9,                           /* (3.11) */
   IP_CALLING_PARTY_NUMBER = 0xa,                              /* (3.10) */
   IP_REDIRECTING_NUMBER = 0xb,                                /* (3.44) */
+  IP_REDIRECTION_NUMBER = 0xc,                                /* (3.46) */
   IP_BACKWARD_CALL_INDICATORS = 0x11,                         /* (3.5) */
   IP_CAUSE_INDICATORS = 0x12,                                 /* (3.12) */
   IP_REDIRECTION_INFORMATION = 0x13,                          /* (3.45) */
@@ -104,6 +105,7 @@ struct isup_backwards_call_ind {
 struct isup_redir_info {
   int is_redirect;
   int reason;
+  int count;
 };
 
 /* Fields in "range and status" parameter. */
@@ -158,6 +160,8 @@ struct isup_msg {
     /* Parameters for ISUP_REL. */
     struct {
       int cause;
+      struct isup_phonenum rdni;
+      struct isup_redir_info redir_inf;
     } rel;
     /* Parameters for ISUP_GRS. */
     struct {

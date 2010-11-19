@@ -17,8 +17,9 @@ Specfication for version 1.4.3
 
 
 New in version 1.4.3
+- Handling of redirection info/number in REL.
 - Support multiple linksets on one E1/T1.
-- Fixes to mtp3d interface
+- Fixes to mtp3d interface.
 - Setting SS7_TMR variable on incoming calls, using SS7_TMR variable to set TMR on outgoing calls.
 
 New in version 1.4.2

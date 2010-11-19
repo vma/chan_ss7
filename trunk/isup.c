@@ -350,7 +350,7 @@ static int decode_redir_inf(unsigned char *p, int len, void *data) {
     return 0;
   }
 
-  redir_inf_ptr->is_redirect = 1;
+  redir_inf_ptr->is_redirect = p[0];
   if(len >= 2) {
     redir_inf_ptr->reason = (p[1] >> 4) & 0xf;
   } else {
@@ -688,6 +688,8 @@ int decode_isup_msg(struct isup_msg *msg, ss7_variant variant, unsigned char *bu
       return param_decode(buf, len,
                           0,
                           IP_CAUSE_INDICATORS, decode_rel_cause, &(msg->rel.cause),
+                          IP_REDIRECTION_NUMBER, decode_dni, &msg->rel.rdni,
+                          IP_REDIRECTION_INFORMATION, decode_redir_inf, &msg->rel.redir_inf,
                           0,
                           0);
 
