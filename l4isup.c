@@ -335,6 +335,24 @@ static void decr_usecount(void)
 }
 #endif
 
+static int str2redirectreason(const char *str)
+{
+  if (strcmp(str, "UNKNOWN") == 0)
+    return 0x00;
+  else if (strcmp(str, "BUSY") == 0)
+    return 0x01;
+  else if (strcmp(str, "NO_REPLY") == 0)
+    return 0x02;
+  else if (strcmp(str, "UNCONDITIONAL") == 0)
+    return 0x03;
+  else if (strcmp(str, "UNREACHABLE") == 0)
+    return 0x06;
+  else {
+    ast_log(LOG_NOTICE, "Invalid redirection reason value '%s' in PRIREDIRECTREASON variable.\n", str);
+    return 0x00;
+  }
+}
+
 static void request_hangup(struct ast_channel* chan, int hangupcause)
 {
   chan->hangupcause = hangupcause;
@@ -677,8 +695,55 @@ static struct ss7_chan *cic_hunt_seq_lth_htl(struct linkset* linkset, int lth, i
   }
 }
 
+static void handle_redir_info(struct ast_channel *chan, struct isup_redir_info* inf)
+{
+  if(inf->is_redirect) {
+    char *string_reason;
+    char count[4];
+    char redir[4];
+    int res;
+
+    snprintf(redir, sizeof(redir), "%d", inf->is_redirect);
+    /* The names here are taken to match with those used in chan_zap.c
+       redirectingreason2str(). */
+    switch(inf->reason) {
+    case 1:
+      string_reason = "BUSY";
+      break;
+    case 2:
+      /* Cause 4 "deflection during alerting"; not sure, but it seems to be
+	 more or less equivalent to "no reply".*/
+    case 4:
+      string_reason = "NO_REPLY";
+      break;
+    case 3:
+      /* Cause 5 "deflection immediate response"; not sure, but it seems to
+	 be more or less equivalent to "unconditional".*/
+    case 5:
+      string_reason = "UNCONDITIONAL";
+      break;
+    case 6:
+      string_reason = "UNREACHABLE";
+      break;
+    default:
+      string_reason = "UNKNOWN";
+      break;
+    }
+    /* Set SS7_REDIRECTCOUNT */
+    res = snprintf(count, sizeof(count), "%d",inf->count + 1);
+    pbx_builtin_setvar_helper(chan, "__SS7_REDIRECTCOUNT", (res > 0) ? count : "1");
+    /* Use underscore variable to make it inherit like other callerid info. */
+    pbx_builtin_setvar_helper(chan, "__PRIREDIRECTREASON", string_reason);
+    pbx_builtin_setvar_helper(chan, "SS7_REDIR", redir);
+  }
+}
+
 /* Send a "release" message. */
 static void isup_send_rel(struct ss7_chan *pvt, int cause) {
+  struct ast_channel *chan = pvt->owner;
+  char* redir  = chan ? (char*) pbx_builtin_getvar_helper(chan, "SS7_REDIR") : NULL;
+  char* reason  = chan ? (char*) pbx_builtin_getvar_helper(chan, "PRIREDIRECTREASON") : NULL;
+  char* rdni  = chan ? (char*) pbx_builtin_getvar_helper(chan, "SS7_RDNI") : NULL;
   unsigned char msg[MTP_MAX_PCK_SIZE];
   int current, varptr;
   unsigned char param[2];
@@ -689,6 +754,25 @@ static void isup_send_rel(struct ss7_chan *pvt, int cause) {
   param[1] = 0x80 | (cause & 0x7f); /* Last octet */
   isup_msg_add_variable(msg, sizeof(msg), &varptr, &current, param, 2);
   isup_msg_start_optional_part(msg, sizeof(msg), &varptr, &current);
+
+  if (redir) {
+    unsigned char param_redir[2];
+    int len = 1;
+    param_redir[0] = atoi(redir);
+    if (reason) {
+      param_redir[1] = str2redirectreason(reason);
+      len = 1;
+    }
+    isup_msg_add_optional(msg, sizeof(msg), &current, IP_REDIRECTION_INFORMATION,
+			  param_redir, len);
+  }
+  if (rdni && *rdni) {
+    unsigned char param_rdni[2 + PHONENUM_MAX];
+    int res = isup_calling_party_num_encode(rdni, 0 /* no pres_restr */, 0 /* national use: user provided, not verified */, param_rdni, sizeof(param_rdni));
+    isup_msg_add_optional(msg, sizeof(msg), &current, IP_REDIRECTION_NUMBER, param_rdni, res);
+  }
+
+
   isup_msg_end_optional_part(msg, sizeof(msg), &current);
   mtp_enqueue_isup(pvt, msg, current);
 }
@@ -1709,36 +1793,7 @@ static void handle_complete_address(struct ss7_chan *pvt)
     /* ToDo: implement redirection reason in Asterisk, and handle it here. */
     chan->cid.cid_rdnis = strdup(iam->rni.num);
   }
-  if(iam->redir_inf.is_redirect) {
-    char *string_reason;
-    /* The names here are taken to match with those used in chan_zap.c
-       redirectingreason2str(). */
-    switch(iam->redir_inf.reason) {
-    case 1:
-      string_reason = "BUSY";
-      break;
-    case 2:
-      /* Cause 4 "deflection during alerting"; not sure, but it seems to be
-	 more or less equivalent to "no reply".*/
-    case 4:
-      string_reason = "NO_REPLY";
-      break;
-    case 3:
-      /* Cause 5 "deflection immediate response"; not sure, but it seems to
-	 be more or less equivalent to "unconditional".*/
-    case 5:
-      string_reason = "UNCONDITIONAL";
-      break;
-    case 6:
-      string_reason = "UNREACHABLE";
-      break;
-    default:
-      string_reason = "UNKNOWN";
-      break;
-    }
-    /* Use underscore variable to make it inherit like other callerid info. */
-    pbx_builtin_setvar_helper(chan, "__PRIREDIRECTREASON", string_reason);
-  }
+  handle_redir_info(chan, &iam->redir_inf);
   if(iam->gni.ani.present)
     pbx_builtin_setvar_helper(chan, "__SS7_GENERIC_ANI", iam->gni.ani.num);
   if(iam->gni.dni.present)
@@ -2015,8 +2070,6 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
       h324m_llc = 1;
     }
     ast_log(LOG_DEBUG, "chan_ss7: isup_send_iam: h324m_usi=%d, h324m_llc=%d\n", h324m_usi, h324m_llc);
-  } else {
-    ast_log(LOG_DEBUG, "chan_ss7: isup_send_iam: ISDN_H324M is not set.\n");
   }
 
   isup_msg_init(msg, sizeof(msg), variant(pvt), peeropc(pvt), peerdpc(pvt), pvt->cic, ISUP_IAM, &current);
@@ -2121,17 +2174,32 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
   }
 
   if (*rdni) {
-    /* ToDo: Pass on RDNIS (and redirection cause when we implement that) as
-       ISUP parameters? */
+    /* Default values: reason "unconditional", count "1" */
+    unsigned char reason = 0x03, rcount = 1;
     /* Q.763 3.45 */
     res = isup_calling_party_num_encode(rdni, pres_restr, 0 /* national use: user provided, not verified */, param, sizeof(param));
     isup_msg_add_optional(msg, sizeof(msg), &current, IP_REDIRECTING_NUMBER, param, res);
     param[0] = 0x04; /* redirecting indicator: call diverted, all redirection information presentation restricted,
 			original redirection reason: unknown */
 			
-    param[1] = 0x31; /* reredicting counter: 1
-			redirection reason: unconditional */
-			
+    /* Read PRIREDRECTREASON and use it to set redirection reason (see ITU-T Q.763 3.44) */
+    strp = pbx_builtin_getvar_helper(chan, "PRIREDIRECTREASON");
+    if (strp) {
+      /* Parse string value */
+      reason = str2redirectreason(strp);
+    }
+    /* Read SS7_REDIRECTCOUNT and use it to set redirection counter (see ITU-T Q.763 3.44) */
+    strp = pbx_builtin_getvar_helper(chan, "SS7_REDIRECTCOUNT");
+    if (strp) {
+      char *endptr;
+      unsigned long val = strtoul(strp, &endptr, 0);
+      if ((strp == endptr) || val < 0 || val > 7)
+        ast_log(LOG_NOTICE, "Invalid redirection count value '%ld' "
+                            "in SS7_REDRECTCOUNT variable.\n", val);
+      else
+        rcount = val;
+    }
+    param[1] = ((reason & 0x0F) << 4) | (rcount & 0x07);   /* redirecting reason, counter */
     isup_msg_add_optional(msg, sizeof(msg), &current, IP_REDIRECTION_INFORMATION, param, 2);
   }
 
@@ -3250,7 +3318,11 @@ static void process_rel(struct ss7_chan *pvt, struct isup_msg *inmsg)
     pvt->state = ST_SENT_REL;
     return;
   }
-
+  if (chan) {
+    handle_redir_info(chan, &inmsg->rel.redir_inf);
+    if(inmsg->rel.rdni.present)
+      pbx_builtin_setvar_helper(chan, "SS7_RDNI", inmsg->rel.rdni.num);
+  }
   if(pvt->state != ST_IDLE && pvt->state != ST_SENT_REL) {
     if(chan != NULL) {
       /* The channel has already been locked in process_isup_message(). */
