@@ -742,7 +742,6 @@ static void handle_redir_info(struct ast_channel *chan, struct isup_redir_info* 
 static void isup_send_rel(struct ss7_chan *pvt, int cause) {
   struct ast_channel *chan = pvt->owner;
   char* redir  = chan ? (char*) pbx_builtin_getvar_helper(chan, "SS7_REDIR") : NULL;
-  char* reason  = chan ? (char*) pbx_builtin_getvar_helper(chan, "PRIREDIRECTREASON") : NULL;
   char* rdni  = chan ? (char*) pbx_builtin_getvar_helper(chan, "SS7_RDNI") : NULL;
   unsigned char msg[MTP_MAX_PCK_SIZE];
   int current, varptr;
@@ -758,13 +757,26 @@ static void isup_send_rel(struct ss7_chan *pvt, int cause) {
   if (redir) {
     unsigned char param_redir[2];
     int len = 1;
+    unsigned char reason = 0x03, rcount = 1;
+
     param_redir[0] = atoi(redir);
-    if (reason) {
-      param_redir[1] = str2redirectreason(reason);
-      len = 1;
+    strp  = chan ? (char*) pbx_builtin_getvar_helper(chan, "PRIREDIRECTREASON") : NULL;
+    if (strp)
+      reason = str2redirectreason(strp);
+    /* Read SS7_REDIRECTCOUNT and use it to set redirection counter (see ITU-T Q.763 3.44) */
+    strp = pbx_builtin_getvar_helper(chan, "SS7_REDIRECTCOUNT");
+    if (strp) {
+      char *endptr;
+      unsigned long val = strtoul(strp, &endptr, 0);
+      if ((strp == endptr) || val < 0 || val > 7)
+        ast_log(LOG_NOTICE, "Invalid redirection count value '%ld' "
+                            "in SS7_REDRECTCOUNT variable.\n", val);
+      else
+        rcount = val;
     }
+    param_redir[1] = ((reason & 0x0F) << 4) | (rcount & 0x07);   /* redirecting reason, counter */
     isup_msg_add_optional(msg, sizeof(msg), &current, IP_REDIRECTION_INFORMATION,
-			  param_redir, len);
+			  param_redir, 2);
   }
   if (rdni && *rdni) {
     unsigned char param_rdni[2 + PHONENUM_MAX];
@@ -2174,6 +2186,7 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
   }
 
   if (*rdni) {
+    char* redir  = chan ? (char*) pbx_builtin_getvar_helper(chan, "SS7_REDIR") : NULL;
     /* Default values: reason "unconditional", count "1" */
     unsigned char reason = 0x03, rcount = 1;
     /* Q.763 3.45 */
@@ -2181,7 +2194,8 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
     isup_msg_add_optional(msg, sizeof(msg), &current, IP_REDIRECTING_NUMBER, param, res);
     param[0] = 0x04; /* redirecting indicator: call diverted, all redirection information presentation restricted,
 			original redirection reason: unknown */
-			
+    if (redir)
+      param[0] = atoi(redir);
     /* Read PRIREDRECTREASON and use it to set redirection reason (see ITU-T Q.763 3.44) */
     strp = pbx_builtin_getvar_helper(chan, "PRIREDIRECTREASON");
     if (strp) {
