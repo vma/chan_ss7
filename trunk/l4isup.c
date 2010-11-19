@@ -746,6 +746,7 @@ static void isup_send_rel(struct ss7_chan *pvt, int cause) {
   unsigned char msg[MTP_MAX_PCK_SIZE];
   int current, varptr;
   unsigned char param[2];
+  const char *strp;
 
   isup_msg_init(msg, sizeof(msg), variant(pvt), peeropc(pvt), peerdpc(pvt), pvt->cic, ISUP_REL, &current);
   isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 1, 1);
@@ -756,7 +757,6 @@ static void isup_send_rel(struct ss7_chan *pvt, int cause) {
 
   if (redir) {
     unsigned char param_redir[2];
-    int len = 1;
     unsigned char reason = 0x03, rcount = 1;
 
     param_redir[0] = atoi(redir);
