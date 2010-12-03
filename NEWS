@@ -21,6 +21,7 @@ New in version 1.4.3
 - Support multiple linksets on one E1/T1.
 - Fixes to mtp3d interface.
 - Setting SS7_TMR variable on incoming calls, using SS7_TMR variable to set TMR on outgoing calls.
+- Handling of redirection information in REL: SS7_RDNI, SS7_REDIR, SS7_REDIRECTCOUNT and PRIREDIRECTREASON.
 
 New in version 1.4.2
 - Minor fixes
