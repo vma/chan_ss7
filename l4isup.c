@@ -2318,9 +2318,6 @@ static int ss7_hangup(struct ast_channel *chan) {
   ast_log(LOG_DEBUG, "SS7 hangup '%s' CIC=%d (state=%d), chan=0x%08lx\n",
 	  chan->name, pvt->cic, pvt->state, (unsigned long) chan);
 
-  chan->tech_pvt = NULL;
-  pvt->owner = NULL;
-
   /* Clear all the timers that may hold on to references to chan. This must be
      done while global lock is held to prevent races. */
   t1_clear(pvt);
@@ -2355,6 +2352,8 @@ static int ss7_hangup(struct ast_channel *chan) {
     pvt->echocancel = 0;
   }
   clear_audiomode(pvt->zaptel_fd);
+  chan->tech_pvt = NULL;
+  pvt->owner = NULL;
 
   ast_mutex_unlock(&pvt->lock);
   unlock_global();
