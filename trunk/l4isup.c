@@ -755,7 +755,6 @@ static void isup_send_rel(struct ss7_chan *pvt, int cause) {
   isup_msg_add_variable(msg, sizeof(msg), &varptr, &current, param, 2);
   isup_msg_start_optional_part(msg, sizeof(msg), &varptr, &current);
 
-  ast_log(LOG_NOTICE, "Rel: chan=0x%08x redir=%s, rdni=%s\n", chan, redir, rdni);
   if (redir) {
     unsigned char param_redir[2];
     unsigned char reason = 0x03, rcount = 1;
