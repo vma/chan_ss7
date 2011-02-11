@@ -82,7 +82,7 @@ static struct ast_jb_conf global_jbconf;
 
 int timeslots(struct link* link)
 {
-  return (link->iftype == INTERFACE_TYPE_E1) ? 32 : 24;
+  return (link->iftype == INTERFACE_TYPE_E1) ? 32 : 25;
 }
 
 int has_linkset_group(char* name) {
