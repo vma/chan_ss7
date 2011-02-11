@@ -688,9 +688,9 @@ int decode_isup_msg(struct isup_msg *msg, ss7_variant variant, unsigned char *bu
       return param_decode(buf, len,
                           0,
                           IP_CAUSE_INDICATORS, decode_rel_cause, &(msg->rel.cause),
+                          0,
                           IP_REDIRECTION_NUMBER, decode_dni, &msg->rel.rdni,
                           IP_REDIRECTION_INFORMATION, decode_redir_inf, &msg->rel.redir_inf,
-                          0,
                           0);
 
     case ISUP_RLC:
