@@ -25,7 +25,7 @@
 
 #define AST_MODULE "chan_ss7"
 
-typedef enum {ITU_SS7, CHINA_SS7} ss7_variant;
+typedef enum {ITU_SS7, ANSI_SS7, CHINA_SS7} ss7_variant;
 
 /* Hunting policy. */
 typedef enum { HUNT_ODD_LRU, HUNT_EVEN_MRU, HUNT_SEQ_LTH, HUNT_SEQ_HTL } hunting_policy;
