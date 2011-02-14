@@ -241,7 +241,7 @@ static const char tdesc[] = "SS7 Protocol Driver";
 static const struct ast_channel_tech ss7_tech = {
   .type = type,
   .description = tdesc,
-  .capabilities = AST_FORMAT_ALAW,
+  .capabilities = AST_FORMAT_ALAW | AST_FORMAT_ULAW,
   .requester = ss7_requester,
 #ifdef USE_ASTERISK_1_2
   .send_digit = ss7_send_digit_begin,
@@ -601,7 +601,7 @@ static struct ss7_chan *cic_hunt_odd_lru(struct linkset* linkset, int first_cic,
       return best;
     }
   }
-  ast_log(LOG_WARNING, "No idle circuit found.\n");
+  ast_log(LOG_WARNING, "No idle circuit found, linkset=%s.\n", linkset->name);
   return NULL;
 }
 
@@ -796,9 +796,11 @@ static void isup_send_rlc(struct ss7_chan* pvt) {
   int cic = pvt->cic;
 
   isup_msg_init(msg, sizeof(msg), variant(pvt), peeropc(pvt), peerdpc(pvt), cic, ISUP_RLC, &current);
-  isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 0, 1);
-  isup_msg_start_optional_part(msg, sizeof(msg), &varptr, &current);
-  isup_msg_end_optional_part(msg, sizeof(msg), &current);
+  if (variant(pvt) != ANSI_SS7) {
+    isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 0, 1);
+    isup_msg_start_optional_part(msg, sizeof(msg), &varptr, &current);
+    isup_msg_end_optional_part(msg, sizeof(msg), &current);
+  }
   mtp_enqueue_isup(pvt, msg, current);
 }
 
@@ -914,7 +916,7 @@ static void initiate_release_circuit(struct ss7_chan* pvt, int cause)
    Assumes called with global lock and pvt->lock held. */
 static struct ast_channel *ss7_new(struct ss7_chan *pvt, int state, char* cid_num, char* exten) {
   struct ast_channel *chan;
-
+  int format;
 #ifdef USE_ASTERISK_1_2
   chan = ast_channel_alloc(1);
   if(!chan) {
@@ -931,11 +933,15 @@ static struct ast_channel *ss7_new(struct ss7_chan *pvt, int state, char* cid_nu
 #endif
 
   chan->tech = &ss7_tech;
-  chan->nativeformats = AST_FORMAT_ALAW;
-  chan->rawreadformat = AST_FORMAT_ALAW;
-  chan->rawwriteformat = AST_FORMAT_ALAW;
-  chan->readformat = AST_FORMAT_ALAW;
-  chan->writeformat = AST_FORMAT_ALAW;
+  if (variant(pvt) == ANSI_SS7)
+    format = AST_FORMAT_ULAW;
+  else
+    format = AST_FORMAT_ALAW;
+  chan->nativeformats = format;
+  chan->rawreadformat = format;
+  chan->rawwriteformat = format;
+  chan->readformat = format;
+  chan->writeformat = format;
   ast_setstate(chan, state);
   chan->fds[0] = pvt->zaptel_fd;
 
@@ -996,7 +1002,7 @@ static struct ast_channel *ss7_requester(const char *type, int format,
 
   ast_log(LOG_DEBUG, "SS7 request (%s/%s) format = 0x%X.\n", type, arg, format);
 
-  if(!(format & AST_FORMAT_ALAW)) {
+  if(!(format & (AST_FORMAT_ALAW | AST_FORMAT_ULAW))) {
     ast_log(LOG_NOTICE, "Audio format 0x%X not supported by SS7 channel.\n",
             format);
     return NULL;
@@ -1072,7 +1078,7 @@ static struct ast_channel *ss7_requester(const char *type, int format,
   if(pvt == NULL) {
     unlock_global();
     *cause = AST_CAUSE_CONGESTION;
-    ast_log(LOG_WARNING, "SS7 requester: No idle circuit available.\n");
+    ast_log(LOG_WARNING, "SS7 requester: No idle circuit available, linkset=%s.\n", linkset->name);
     return NULL;
   }
 
@@ -2105,31 +2111,50 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
   param[0] = 0x0a; /* Ordinary calling subscriber */
   isup_msg_add_fixed(msg, sizeof(msg), &current, param, 1);
 
-  /* Transmission medium requirement Q.763 (3.54). */
-  strp = pbx_builtin_getvar_helper(chan, "SS7_TMR");
-  if (strp) {
-    /* Get transmission media value and make sure it is legal */
-    char *endptr;
-    unsigned long val = strtoul(strp, &endptr, 0);
-    if ((strp == endptr) || val < 0 || val > 255) {
-      ast_log(LOG_NOTICE, "Invalid transmedium requirement value '%ld' in SS7_TMR variable.\n", val);
-      param[0] = 0x00;
-    } else
-      param[0] = (unsigned char) val;
+  if (variant(pvt) == ANSI_SS7) {
+    isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 2, 1);
+    /* Some switches do not understand H.223. Those switches use Access Transport
+     * (Low Layer Compatibility) to signal the video call end-to-end.
+     */
+    if (h324m_usi) {
+      /* User Service Information: Q.763 3.57 */
+      param[0] = 0x88; /* unrestricted digital information */
+      param[1] = 0x90; /* circuit mode, 64 kbit */
+      param[2] = 0xA6; /* UL1, H.223 and H.245 */
+      isup_msg_add_variable(msg, sizeof(msg), &varptr, &current, param, 3);
+    }
+    else {
+      /* User Service Information. */
+      param[0] = 0x90; /* Last octet, ITU-T standardized coding */
+      param[1] = 0x90; /* Last octet, Circuit mode, 64 kbit/s */
+      param[2] = 0xa2; /* Last octet, UL1, G.711 u-law */
+      isup_msg_add_variable(msg, sizeof(msg), &varptr, &current, param, 3);
+    }
   }
   else {
-    if (h324m_usi || h324m_llc) {
+    /* Transmission medium requirement Q.763 (3.54). */
+    strp = pbx_builtin_getvar_helper(chan, "SS7_TMR");
+    if (strp) {
+      /* Get transmission media value and make sure it is legal */
+      char *endptr;
+      unsigned long val = strtoul(strp, &endptr, 0);
+      if ((strp == endptr) || val < 0 || val > 255) {
+	ast_log(LOG_NOTICE, "Invalid transmedium requirement value '%ld' in SS7_TMR variable.\n", val);
+	param[0] = 0x00;
+      } else
+	param[0] = (unsigned char) val;
+    }
+    else if (h324m_usi || h324m_llc) {
       param[0] = 0x02; /* 64 kbit/s unrestricted */
       pvt->is_digital = 1;
     } else {
       param[0] = 0x00; /* Speech */
     }
+    isup_msg_add_fixed(msg, sizeof(msg), &current, param, 1);
+    isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 1, 1);
   }
-  isup_msg_add_fixed(msg, sizeof(msg), &current, param, 1);
 
   /* Called party number Q.763 (3.9). */
-  isup_msg_start_variable_part(msg, sizeof(msg), &varptr, &current, 1, 1);
-
   if (dnilimit > 0 && strlen(dni) > dnilimit) {
     /* Make part of dni */
     strncpy(dnicpy, dni, dnilimit);
@@ -2488,7 +2513,10 @@ static struct ast_frame *ss7_read(struct ast_channel * chan) {
 
   memset(&pvt->frame, 0, sizeof(pvt->frame));
   pvt->frame.frametype = AST_FRAME_VOICE;
-  pvt->frame.subclass = AST_FORMAT_ALAW;
+  if (variant(pvt) == ANSI_SS7)
+    pvt->frame.subclass = AST_FORMAT_ULAW;
+  else
+    pvt->frame.subclass = AST_FORMAT_ALAW;
   pvt->frame.samples = AUDIO_READSIZE;
   pvt->frame.mallocd = 0;
   pvt->frame.src = NULL;
@@ -2587,9 +2615,10 @@ static int ss7_write(struct ast_channel * chan, struct ast_frame *frame) {
 
   ast_mutex_lock(&pvt->lock);
 
-  if(frame->frametype != AST_FRAME_VOICE || frame->subclass != AST_FORMAT_ALAW) {
+  if((frame->frametype != AST_FRAME_VOICE) || ((frame->subclass != AST_FORMAT_ALAW) && (frame->subclass != AST_FORMAT_ULAW)))
+ {
     ast_mutex_unlock(&pvt->lock);
-    ast_log(LOG_WARNING, "Unexpected frame.\n");
+    ast_log(LOG_WARNING, "Unexpected frame type=%d, subclass=%d.\n", frame->frametype, frame->subclass);
     return -1;
   }
 
@@ -4728,7 +4757,14 @@ static void init_pvt(struct ss7_chan *pvt, struct link* link, int cic) {
   memset(pvt->buffer, 0, sizeof(pvt->buffer));
   memset(&pvt->frame, 0, sizeof(pvt->frame));
   pvt->frame.frametype = AST_FRAME_VOICE;
-  pvt->frame.subclass = AST_FORMAT_ALAW;
+  if (variant(pvt) == ANSI_SS7) {
+    pvt->frame.subclass = AST_FORMAT_ULAW;
+    pvt->law = DAHDI_LAW_MULAW;
+  }
+  else {
+    pvt->frame.subclass = AST_FORMAT_ALAW;
+    pvt->law = DAHDI_LAW_ALAW;
+  }
   pvt->frame.samples = AUDIO_READSIZE;
   pvt->frame.mallocd = 0;
   pvt->frame.src = NULL;
@@ -4744,7 +4780,6 @@ static void init_pvt(struct ss7_chan *pvt, struct link* link, int cic) {
   pvt->is_digital = 0;
   pvt->grs_count = -1;
   pvt->cgb_mask = 0;
-  pvt->law = DAHDI_LAW_ALAW;
   memset(pvt->context, 0, sizeof(pvt->context));
   memset(pvt->language, 0, sizeof(pvt->language));
 };

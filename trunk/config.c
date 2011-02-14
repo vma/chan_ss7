@@ -325,6 +325,8 @@ static int load_config_linkset(struct ast_config *cfg, const char* cat)
 	linkset->variant = CHINA_SS7;
       } else if(0 == strcasecmp(v->value, "ITU")) {
 	linkset->variant = ITU_SS7;
+      } else if(0 == strcasecmp(v->value, "ANSI")) {
+	linkset->variant = ANSI_SS7;
       } else {
 	ast_log(LOG_ERROR, "Error invalid SS7 variant '%s'.\n", v->value);
 	return -1;
