@@ -629,9 +629,25 @@ static void usage(void)
 }
 
   
+static void reopen_logfiles(void)
+{
+  if (!freopen("/var/log/mtp3d.log", "a", stdout)) {
+    fprintf(stderr, "Cannot open /var/log/mtp3d.log for writing\n");
+    exit(1);
+  }
+  if (!freopen("/var/log/mtp3d.log", "a", stderr))
+    fprintf(stderr, "Cannot open /var/log/mtp3d.log for writing\n");
+}
+
 static void sigterm(int p)
 {
   monitor_running = 0;
+}
+
+static void sighup(int p)
+{
+  reopen_logfiles();
+  ast_log(LOG_NOTICE, "Log file reopened\n");
 }
 
 static void sigpipe(int p)
@@ -646,6 +662,8 @@ static void setsigactions(void)
   sa.sa_flags = 0;
   sa.sa_handler= sigterm;
   sigaction(SIGTERM, &sa, NULL);
+  sa.sa_handler= sighup;
+  sigaction(SIGHUP, &sa, NULL);
   sa.sa_handler= sigpipe;
   sigaction(SIGPIPE, &sa, NULL);
 }
@@ -739,12 +757,7 @@ int main(int argc, char* argv[])
   }
   is_mtp3d = 1;
   if (do_fork) {
-    if (!freopen("/var/log/mtp3d.log", "a", stdout)) {
-      fprintf(stderr, "Cannot open /var/log/mtp3d.log for writing\n");
-      exit(1);
-    }
-    if (!freopen("/var/log/mtp3d.log", "a", stderr))
-      fprintf(stderr, "Cannot open /var/log/mtp3d.log for writing\n");
+    reopen_logfiles();
   }
   printf("Using %s for config directory\n", ast_config_AST_CONFIG_DIR);
   if(load_config(0)) {
