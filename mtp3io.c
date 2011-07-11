@@ -123,6 +123,7 @@ int mtp3_connect_socket(const char* host, const char* port)
     res = socket(rp->ai_family, hints.ai_socktype, hints.ai_protocol);
     if (res == -1)
       continue;
+    ast_log(LOG_DEBUG, "connecting to mtp3d %s:%d, fd %d\n", inet_ntoa(((struct sockaddr_in*) rp)->sin_addr), ntohs(((struct sockaddr_in*) rp)->sin_port), res);
     if ((s = connect(res, rp->ai_addr, rp->ai_addrlen)) != -1)
       break;
     close(res);

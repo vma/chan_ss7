@@ -322,7 +322,7 @@ int cmd_mtp_linkstatus(char* buff, int details, int slinkno)
     case MTP2_INSERVICE: s = "INSERVICE"; break;
     default: s = "UNKNOWN";
     }
-    format = "linkset %s, link %s/%d %s, sls %d, total: %6llu, %6llu\n";
+    format = "linkset:%s, link:%s/%d, state:%s, sls:%d, total: %6llu/%6llu\n";
     sprintf(r, format, m->link->linkset->name, m->link->name, m->schannel+1, s, m->sls, m->readcount, m->writecount);
     strcat(buff, r);
   }

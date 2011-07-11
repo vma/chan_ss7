@@ -444,8 +444,14 @@ static void mtp_enqueue_isup_packet(struct link* link, int cic, unsigned char *m
   if(slink && slink->mtp3fd > -1) {
     res = mtp3_send(slink->mtp3fd, (unsigned char *)req, sizeof(struct mtp_req) + req->len);
     if (res < 0) {
+      ast_log(LOG_DEBUG, "closing connection to mtp3d, fd %d, res: %d, err: %s\n", slink->mtp3fd, res, strerror(errno));
       close(slink->mtp3fd);
       slink->mtp3fd = -1;
+    }
+    {
+      struct isup_msg isup_msg;
+      res = decode_isup_msg(&isup_msg, slink->linkset->variant, msg, msglen);
+      ast_log(LOG_DEBUG, "Sent to mtp3d: %s (CIC %d), link '%s'\n", isupmsg(isup_msg.typ), cic, slink->name);
     }
     return;
   }
@@ -4954,6 +4960,10 @@ void l4isup_event(struct mtp_event* event)
     ast_log(LOG_NOTICE, "ISUP decoding error, message discarded. (typ=%d)\n", isup_msg.typ);
   } else {
     struct ss7_chan* pvt = find_pvt_with_pc(event->isup.slink, isup_msg.cic, isup_msg.opc);
+    {
+      ast_log(LOG_WARNING, "Received %s (CIC %d), link '%s'.\n", isupmsg(isup_msg.typ), isup_msg.cic, event->isup.slink->name);
+    }
+
     if (pvt) {
       if(pvt->equipped)
 	process_isup_message(pvt->link, &isup_msg);

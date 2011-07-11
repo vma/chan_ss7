@@ -1128,7 +1128,7 @@ static int load_config_cluster(struct ast_config *cfg)
     host = NULL;
     for (i = 0; i < n_hosts; i++) {
       for (j = 0; j < hosts[i].n_spans; j++) {
-	for (l = 0; l < host->spans[j].n_links; l++) {
+	for (l = 0; l < hosts[i]->spans[j].n_links; l++) {
 	  if (hosts[i].spans[j].links[l] == link) {
 	    host = &hosts[i];
 	    break;
