@@ -1,7 +1,7 @@
 # INSTALL_PREFIX may be overridden to install elsewhere from /usr.
 INSTALL_PREFIX = /usr/local/ss7
 
-VERSION=2.0.1
+VERSION=2.1.0-beta1
 
 # INCLUDE may be overridden to find asterisk and zaptel includes in
 # non-standard places.
@@ -49,7 +49,7 @@ all: chan_ss7.so mtp3d
 chan_ss7.so: $(OBJS)
 	$(CC) $(SOLINK) -o $@ $^
 
-mtp3d: mtp3d.o mtp3io.o aststubs.o mtp_standalone.o transport_standalone.o utils_standalone.o lffifo.o config_standalone.o configparser.o isup.o cli.o dump.o
+mtp3d: mtp3d.o mtp3io.o aststubs.o mtp_standalone.o transport_standalone.o utils_standalone.o lffifo.o config_standalone.o configparser.o isup.o cli.o dump.o # $(ASTERISK_PATH)/lock.o
 	$(CC) -o $@ $^ -lpthread
 
 mtp3cli: mtp3cli.o

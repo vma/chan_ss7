@@ -55,6 +55,7 @@
 
 #include "astversion.h"
 #include "config.h"
+#include "cli.h"
 #include "lffifo.h"
 #include "utils.h"
 #include "mtp3io.h"
@@ -561,7 +562,7 @@ static int cluster_receive_packet(int senderix, int fd)
   }
   host_last_seq_no[hostix] = event->seq_no;
   if (res > 0) {
-    ast_log(LOG_DEBUG, "Received event, senderix=%d, hostix=%d, lastseq=%ld, seqno=%ld, typ=%d\n", senderix, hostix, host_last_seq_no[hostix], event->seq_no, event->typ);
+    ast_log(LOG_DEBUG, "Received event, senderix=%d, hostix=%d, lastseq=%ld, seqno=%d, typ=%d\n", senderix, hostix, host_last_seq_no[hostix], event->seq_no, event->typ);
     if ((event->typ == MTP_EVENT_ISUP) || (event->typ == MTP_REQ_ISUP_FORWARD)) {
       if (isup_event_handler)
 	(*isup_event_handler)(event);
@@ -964,21 +965,21 @@ void cluster_cleanup(void)
 }
 
 
-int cmd_cluster_start(int fd, int argc, char *argv[])
+int cmd_cluster_start(int fd, int argc, argv_type argv)
 {
   if (!cluster_running)
     return cluster_init(isup_event_handler, isup_block_handler);
   return 0;
 }
 
-int cmd_cluster_stop(int fd, int argc, char *argv[])
+int cmd_cluster_stop(int fd, int argc, argv_type argv)
 {
   if (cluster_running)
     cluster_cleanup();
   return 0;
 }
 
-int cmd_cluster_status(int fd, int argc, char *argv[])
+int cmd_cluster_status(int fd, int argc, argv_type argv)
 {
   int i;
   int linkix, targetix;

@@ -329,7 +329,7 @@ int cmd_mtp_linkstatus(char* buff, int details, int slinkno)
   return 0;
 }
 
-int cmd_mtp_data(int fd, int argc, char *argv[])
+int cmd_mtp_data(int fd, int argc, argv_type argv)
 {
   unsigned char buf[MTP_EVENT_MAX_SIZE];
   int len = 0;
@@ -1062,7 +1062,7 @@ static int mtp3_send_sltm(const void *data) {
   if (subservice == -1)
     subservice = 0x8;
 
-  fifo_log(m, LOG_EVENT, "Sending SLTM to peer on link '%s'....\n", m->name);
+  fifo_log(m, LOG_NOTICE, "Sending SLTM to peer on link '%s'....\n", m->name);
   mtp3_put_label(m->sls, variant(m), peeropc(m), linkpeerdpc(m), message_sltm);
   switch (variant(m)) {
   case ITU_SS7:
@@ -2511,7 +2511,7 @@ int mtp_init(void) {
   return -1;
 }
 
-int cmd_testfailover(int fd, int argc, char *argv[]) {
+int cmd_testfailover(int fd, int argc, const char * const * argv) {
   testfailover = 1;
   return 0;
 }
