@@ -42,8 +42,8 @@ void mtp3_put_label(int sls, ss7_variant variant, int opc, int dpc, unsigned cha
 int mtp_has_inservice_schannels(struct link*);
 int mtp2_slink_inservice(int linkix);
 int cmd_mtp_linkstatus(char* buff, int details, int timeslot);
-int cmd_mtp_data(int fd, int argc, char *argv[]);
-int cmd_testfailover(int fd, int argc, char *argv[]);
+int cmd_mtp_data(int fd, int argc, argv_type argv);
+int cmd_testfailover(int fd, int argc, argv_type argv);
 
 int get_receive_pipe(void);
 void mtp_enqueue_control(struct mtp_req *req);

@@ -26,11 +26,11 @@
 
 int isup_init(void);
 int isup_cleanup(void);
-int cmd_block(int fd, int argc, char *argv[]);
-int cmd_unblock(int fd, int argc, char *argv[]);
-int cmd_linestat(int fd, int argc, char *argv[]);
-int cmd_reset(int fd, int argc, char *argv[]);
-int cmd_linkset_status(int fd, int argc, char *argv[]);
+int cmd_block(int fd, int argc, argv_type argv);
+int cmd_unblock(int fd, int argc, argv_type argv);
+int cmd_linestat(int fd, int argc, argv_type argv);
+int cmd_reset(int fd, int argc, argv_type argv);
+int cmd_linkset_status(int fd, int argc, argv_type argv);
 void l4isup_inservice(struct link* link);
 void l4isup_event(struct mtp_event* event);
 void l4isup_link_status_change(struct link* link, int up);

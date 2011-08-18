@@ -35,25 +35,25 @@
 
 #include "astversion.h"
 #include "config.h"
+#include "cli.h"
 #include "utils.h"
 #include "mtp3io.h"
 #include "mtp.h"
 #include "l4isup.h"
 #include "cluster.h"
-#include "cli.h"
 #include "dump.h"
 
 
-static int cmd_version(int fd, int argc, char *argv[]);
-static int cmd_dump_status(int fd, int argc, char *argv[]);
-static int cmd_dump_stop(int fd, int argc, char *argv[]);
-static int cmd_dump_start(int fd, int argc, char *argv[]);
+static int cmd_version(int fd, int argc, argv_type argv);
+static int cmd_dump_status(int fd, int argc, argv_type argv);
+static int cmd_dump_stop(int fd, int argc, argv_type argv);
+static int cmd_dump_start(int fd, int argc, argv_type argv);
 static char *complete_dump_stop(const char *line, const char *word, int pos, int state);
 static char *complete_dump_start(const char *line, const char *word, int pos, int state);
-static int cmd_link_up(int fd, int argc, char *argv[]);
-static int cmd_link_down(int fd, int argc, char *argv[]);
-static int cmd_link_status(int fd, int argc, char *argv[]);
-static int cmd_ss7_status(int fd, int argc, char *argv[]);
+static int cmd_link_up(int fd, int argc, argv_type argv);
+static int cmd_link_down(int fd, int argc, argv_type argv);
+static int cmd_link_status(int fd, int argc, argv_type argv);
+static int cmd_ss7_status(int fd, int argc, argv_type argv);
 
 static char *complete_null(const char *line, const char *word, int pos, int state)
 {
@@ -61,7 +61,7 @@ static char *complete_null(const char *line, const char *word, int pos, int stat
 }
 
 
-static int cmd_show_channels(int fd, int argc, char *argv[])
+static int cmd_show_channels(int fd, int argc, argv_type argv)
 {
   return cmd_linestat(fd, argc, argv);
 }
@@ -79,18 +79,31 @@ static int cmd_show_channels(int fd, int argc, char *argv[])
 	 .handler = handle_##cmd,			\
 }
 
+#if defined(USE_ASTERISK_1_6)
 #define cli_handler(cmd) \
   static char *handle_##cmd(struct ast_cli_entry *e, int clicmd, struct ast_cli_args *a) \
   {									\
     static char buf[100];				\
-    char* syntax[] = {"ss7", syntx_cmd_##cmd,NULL};		\
+    char* const syntax[] = {"ss7", syntx_cmd_##cmd,NULL};		\
   switch(clicmd) {					\
   case CLI_INIT: ast_join(buf, sizeof(buf), syntax); e->command = buf; return NULL; \
   case CLI_GENERATE:  return compl_cmd_##cmd(a->line, a->word, a->pos, a->n); \
  }\
   return  (char*) (long) cmd_##cmd(a->fd, a->argc, a->argv);	\
   }
- 
+#else
+#define cli_handler(cmd) \
+  static char *handle_##cmd(struct ast_cli_entry *e, int clicmd, struct ast_cli_args *a) \
+  {									\
+    static char buf[100];				\
+    const char* syntax[] = {"ss7", syntx_cmd_##cmd,NULL};		\
+  switch(clicmd) {					\
+  case CLI_INIT: ast_join(buf, sizeof(buf), syntax); e->command = buf; return NULL; \
+  case CLI_GENERATE:  return compl_cmd_##cmd(a->line, a->word, a->pos, a->n); \
+ }\
+  return  (char*) (long) cmd_##cmd(a->fd, a->argc, a->argv);	\
+  }
+#endif
 #endif
 
 
@@ -269,7 +282,7 @@ struct ast_cli_entry my_clis[] = {
 
 
 
-static int cmd_link_up_down(int fd, int argc, char *argv[], int updown) {
+static int cmd_link_up_down(int fd, int argc, argv_type argv, int updown) {
   static unsigned char buf[sizeof(struct mtp_req)];
   struct mtp_req *req = (struct mtp_req *)buf;
   int i;
@@ -297,17 +310,17 @@ static int cmd_link_up_down(int fd, int argc, char *argv[], int updown) {
 }
 
 
-static int cmd_link_down(int fd, int argc, char *argv[]) {
+static int cmd_link_down(int fd, int argc, argv_type argv) {
   return cmd_link_up_down(fd, argc, argv, MTP_REQ_LINK_DOWN);
 }
 
 
-static int cmd_link_up(int fd, int argc, char *argv[]) {
+static int cmd_link_up(int fd, int argc, argv_type argv) {
   return cmd_link_up_down(fd, argc, argv, MTP_REQ_LINK_UP);
 }
 
 
-static int cmd_link_status(int fd, int argc, char *argv[]) {
+static int cmd_link_status(int fd, int argc, argv_type argv) {
   char buff[8192];
   int i;
 
@@ -359,7 +372,7 @@ static char *complete_dump_stop(const char *line, const char *word, int pos, int
   }
 }
 
-static int cmd_dump_start(int fd, int argc, char *argv[]) {
+static int cmd_dump_start(int fd, int argc, argv_type argv) {
   int in, out;
   int i;
   int fisu,lssu,msu;
@@ -410,7 +423,7 @@ static int cmd_dump_start(int fd, int argc, char *argv[]) {
   return RESULT_SUCCESS;
 }
 
-static int cmd_dump_stop(int fd, int argc, char *argv[]) {
+static int cmd_dump_stop(int fd, int argc, argv_type argv) {
   int in, out;
 
   if(argc == 3) {
@@ -436,14 +449,14 @@ static int cmd_dump_stop(int fd, int argc, char *argv[]) {
   return RESULT_SUCCESS;
 }
 
-static int cmd_dump_status(int fd, int argc, char *argv[])
+static int cmd_dump_status(int fd, int argc, argv_type argv)
 {
   dump_status(fd);
   return RESULT_SUCCESS;
 }
 
 
-static int cmd_version(int fd, int argc, char *argv[])
+static int cmd_version(int fd, int argc, argv_type argv)
 {
   ast_cli(fd, "chan_ss7 version %s\n", CHAN_SS7_VERSION);
 
@@ -451,7 +464,7 @@ static int cmd_version(int fd, int argc, char *argv[])
 }
 
 
-static int cmd_ss7_status(int fd, int argc, char *argv[])
+static int cmd_ss7_status(int fd, int argc, argv_type argv)
 {
   cmd_linkset_status(fd, argc, argv);
   return RESULT_SUCCESS;

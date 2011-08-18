@@ -25,6 +25,14 @@
 
 #define AST_MODULE "chan_ss7"
 
+#if defined(USE_ASTERISK_1_2) || defined(USE_ASTERISK_1_4) || defined(USE_ASTERISK_1_6)
+#define argv_type char**
+#else
+#define argv_type const char* const*
+#endif
+
+
+
 typedef enum {ITU_SS7, ANSI_SS7, CHINA_SS7} ss7_variant;
 
 /* Hunting policy. */

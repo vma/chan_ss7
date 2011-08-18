@@ -45,6 +45,7 @@
 
 #include "astversion.h"
 #include "config.h"
+#include "cli.h"
 #include "lffifo.h"
 #include "utils.h"
 #include "mtp.h"
@@ -53,7 +54,6 @@
 #include "l4isup.h"
 #include "cluster.h"
 #include "mtp3io.h"
-#include "cli.h"
 #include "dump.h"
 
 #ifdef USE_ASTERISK_1_2
