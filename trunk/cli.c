@@ -512,8 +512,8 @@ void cli_handle(int fd, char* cmd)
       my_clis[i].handler(fd, argc, argv);
 #else
       struct ast_cli_args a;
-      a.fd = fd;
-      a.argc = argc;
+      *(int*) &a.fd = fd;
+      *(int*) &a.argc = argc;
       a.argv = argv;
       my_clis[i].handler(&my_clis[i], CLI_HANDLER, &a);
 #endif

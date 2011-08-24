@@ -1817,22 +1817,20 @@ static void handle_complete_address(struct ss7_chan *pvt)
 #if defined(USE_ASTERISK_1_2) || defined(USE_ASTERISK_1_4) || defined(USE_ASTERISK_1_6)
   if(iam->ani.present) {
     chan->cid.cid_num = strdup(iam->ani.num);
-    chan->cid.cid_dnid = strdup(iam->dni.num);
+    /* ToDo: Handle screening. */
     if(iam->ani.restricted) {
       chan->cid.cid_pres = AST_PRES_PROHIB_NETWORK_NUMBER;
     } else {
       chan->cid.cid_pres = AST_PRES_ALLOWED_NETWORK_NUMBER;
     }
-    /* ToDo: Handle screening. */
-    if(iam->rni.present) {
-      /* ToDo: implement redirection reason in Asterisk, and handle it here. */
-      chan->cid.cid_rdnis = strdup(iam->rni.num);
-    }
+  }
+  if(iam->rni.present) {
+    /* ToDo: implement redirection reason in Asterisk, and handle it here. */
+    chan->cid.cid_rdnis = strdup(iam->rni.num);
   }
   chan->cid.cid_dnid = strdup(iam->dni.num);
 #else
   if(iam->ani.present) {
-    chan->cid.cid_num = strdup(iam->ani.num);
     chan->caller.id.number.str = strdup(iam->ani.num);
     if(iam->ani.restricted) {
       chan->caller.id.number.presentation = AST_PRES_PROHIB_NETWORK_NUMBER;
