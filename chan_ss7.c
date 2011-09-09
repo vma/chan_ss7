@@ -1,9 +1,8 @@
 /* chan_ss7.c - Implementation of SS7 (MTP2, MTP3, and ISUP) for Asterisk.
  *
- * Copyright (C) 2005-2006, Sifira A/S.
+ * Copyright (C) 2005-2006-2011 Netfors ApS.
  *
  * Author: Kristian Nielsen <kn@sifira.dk>,
- *         Anders Baekgaard <ab@sifira.dk>
  *         Anders Baekgaard <ab@netfors.com>
  *
  * This file is part of chan_ss7.

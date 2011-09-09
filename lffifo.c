@@ -1,6 +1,6 @@
 /* fifo.c - Lock-free FIFO for use in chan_ss7.
 
-   Copyright (C) 2005, Sifira A/S.
+   Copyright (C) 2005-2011, Netfors ApS.
 
    Author: Kristian Nielsen <kn@sifira.dk>
 

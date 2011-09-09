@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2007, Netfors
+ * Copyright (C) 2007-2011, Netfors ApS.
  * Anders Baekgaard <ab@netfors.com>
  */
 

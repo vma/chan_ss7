@@ -1,9 +1,8 @@
 /* config.c - chan_ss7 configuration
  *
- * Copyright (C) 2006, Sifira A/S.
+ * Copyright (C) 2006-2011 Netfors ApS.
  *
- * Author: Anders Baekgaard <ab@sifira.dk>
- *         Anders Baekgaard <ab@netfors.com>
+ * Author: Anders Baekgaard <ab@netfors.com>
  *
  * This file is part of chan_ss7.
  *
