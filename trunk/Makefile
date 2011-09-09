@@ -1,15 +1,19 @@
 # INSTALL_PREFIX may be overridden to install elsewhere from /usr.
 INSTALL_PREFIX = /usr/local/ss7
 
-VERSION=2.1.0-beta2
+VERSION=2.1.0
 
 # INCLUDE may be overridden to find asterisk and zaptel includes in
 # non-standard places.
 #INCLUDE+=-I../source/telephony/zaptel/kernel
 #CFLAGS+=-DUSE_ZAPTEL
+ASTERISK_PATH=../source/telephony/asterisk
 INCLUDE+=-I../source/telephony/dahdi/include
-
-INCLUDE+=-I../source/telephony/asterisk/include
+INCLUDE+=-I$(ASTERISK_PATH)/include
+ASTERISK_VERSION = $(shell cat astversion.h)
+ifeq ($(findstring 1_8,$(ASTERISK_VERSION)),1_8)
+  ASTERISK_1_8_OBJS = $(ASTERISK_PATH)/main/lock.o
+endif
 
 CC=gcc
 CFLAGS+=$(INCLUDE) -g -pipe -Wall -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -D_REENTRANT -D_GNU_SOURCE -DPIC -fpic  -finline-functions
@@ -37,6 +41,7 @@ ALLSRCS = $(SRCS) astversion.c configparser.c aststubs.c mtp3io.c mtp3d.c mtp3cl
 OBJS = $(SRCS:.c=.o)
 ALLOBJS = $(ALLSRCS:.c=.o)
 
+
 .PHONY: prepare all install clean release
 
 default: all mtp3d mtp3cli
@@ -49,7 +54,7 @@ all: chan_ss7.so mtp3d
 chan_ss7.so: $(OBJS)
 	$(CC) $(SOLINK) -o $@ $^
 
-mtp3d: mtp3d.o mtp3io.o aststubs.o mtp_standalone.o transport_standalone.o utils_standalone.o lffifo.o config_standalone.o configparser.o isup.o cli.o dump.o # $(ASTERISK_PATH)/lock.o
+mtp3d: mtp3d.o mtp3io.o aststubs.o mtp_standalone.o transport_standalone.o utils_standalone.o lffifo.o config_standalone.o configparser.o isup.o cli.o dump.o $(ASTERISK_1_8_OBJS)
 	$(CC) -o $@ $^ -lpthread
 
 mtp3cli: mtp3cli.o

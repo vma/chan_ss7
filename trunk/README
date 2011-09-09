@@ -1,6 +1,6 @@
 This is the README for chan_ss7, version 0.9
 
-Copyright (C) 2005-2006, Sifira A/S.
+Copyright (C) 2006-2011 Netfors ApS.
 
 chan_ss7 is free software; you can redistribute it and/or modify it under the
 terms of the GNU General Public License as published by the Free Software
@@ -104,8 +104,3 @@ the same file can be used in a multi host setup.
 
 
 Report any problems or successes to chan-ss7@netfors.com.
-
-User-level support for chan_ss7 from Sifira A/S will be limited, but we are
-very interested in working together with anyone else on improving and
-extending this code. If interested in contributing, please send us a note at
-the above address.

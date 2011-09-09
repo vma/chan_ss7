@@ -1,8 +1,8 @@
 /* cluster.c - chan_ss7 clustering/redundancy
  *
- * Copyright (C) 2006, Sifira A/S.
+ * Copyright (C) 2006-2011 Netfors ApS.
  *
- * Author: Anders Baekgaard <ab@sifira.dk>
+ * Author: Anders Baekgaard <ab@netfors.com>
  *
  * This file is part of chan_ss7.
  *

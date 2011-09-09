@@ -1,9 +1,9 @@
 /*  cli.c - chan_ss7/mtp3d cli interface
+ *
+ * Copyright (C) 2006-2011 Netfors ApS.
+ *
  * Author: Anders Baekgaard <ab@netfors.com>
- * This work is derived from chan_ss7, see copyright below.
- */
-
-/*
+ *
  * This file is part of chan_ss7.
  *
  * chan_ss7 is free software; you can redistribute it and/or modify

@@ -1,9 +1,9 @@
-/* astversion.h - Determine which asterisk version to use
+/* astversion.c - Determine which asterisk version to use
+ *
+ * Copyright (C) 2006-2011 Netfors ApS.
+ *
  * Author: Anders Baekgaard <ab@netfors.com>
- * This work is included with chan_ss7, see copyright below.
- */
-
-/*
+ *
  * This file is part of chan_ss7.
  *
  * chan_ss7 is free software; you can redistribute it and/or modify
@@ -30,7 +30,11 @@
 #ifdef AST_MODULE_INFO
 #include "asterisk/version.h"
 #ifdef AST_CLI_DEFINE
-#define USE_ASTERISK_1_6
+#ifdef AST_CLI_YESNO
+#  define USE_ASTERISK_1_8
+#else
+#  define USE_ASTERISK_1_6
+#endif
 #else
 #define USE_ASTERISK_1_4
 #endif
@@ -49,8 +53,12 @@ int main(int argc, char* argv[])
 #ifdef USE_ASTERISK_1_6
   printf("#define USE_ASTERISK_1_6\n");
 #else
+#ifdef USE_ASTERISK_1_8
+  printf("#define USE_ASTERISK_1_8\n");
+#else
   fprintf(stderr, "Unknown asterisk version\n");
   return -1;
+#endif
 #endif
 #endif
 #endif

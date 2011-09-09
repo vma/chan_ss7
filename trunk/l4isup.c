@@ -1,9 +1,8 @@
 /* l4isup.c - ISUP protocol
  *
- * Copyright (C) 2006, Sifira A/S.
+ * Copyright (C) 2006-2011 Netfors ApS.
  *
- * Author: Anders Baekgaard <ab@sifira.dk>
- *         Anders Baekgaard <ab@netfors.com>
+ * Author: Anders Baekgaard <ab@netfors.com>
  * Based on work by: Kristian Nielsen <kn@sifira.dk>,
  *
  * This file is part of chan_ss7.
@@ -2686,7 +2685,7 @@ static int ss7_write(struct ast_channel * chan, struct ast_frame *frame) {
   ast_mutex_lock(&pvt->lock);
 
 #if defined(USE_ASTERISK_1_2) || defined(USE_ASTERISK_1_4) || defined(USE_ASTERISK_1_6)
-  if(frame->frametype != AST_FRAME_VOICE || frame->subclass != AST_FORMAT_ALAW) {
+  if((frame->frametype != AST_FRAME_VOICE) || ((frame->subclass != AST_FORMAT_ALAW) && (frame->subclass != AST_FORMAT_ULAW))) {
     ast_mutex_unlock(&pvt->lock);
     ast_log(LOG_WARNING, "Unexpected frame.\n");
     return -1;

@@ -1,9 +1,8 @@
 /* mtp.c - MTP2 and MTP3 functionality.
  *
- * Copyright (C) 2005-2006, Sifira A/S.
+ * Copyright (C) 2005-2011 Netfors ApS.
  *
  * Author: Kristian Nielsen <kn@sifira.dk>
- *         Anders Baekgaard <ab@sifira.dk>
  *         Anders Baekgaard <ab@netfors.com>
  *
  * This file is part of chan_ss7.
