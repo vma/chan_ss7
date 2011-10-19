@@ -1830,11 +1830,11 @@ static void handle_complete_address(struct ss7_chan *pvt)
   chan->cid.cid_dnid = strdup(iam->dni.num);
 #else
   if(iam->ani.present) {
-    chan->caller.id.number.str = strdup(iam->ani.num);
+    chan->connected.id.number.str = strdup(iam->ani.num);
     if(iam->ani.restricted) {
-      chan->caller.id.number.presentation = AST_PRES_PROHIB_NETWORK_NUMBER;
+      chan->connected.id.number.presentation = AST_PRES_PROHIB_NETWORK_NUMBER;
     } else {
-      chan->caller.id.number.presentation = AST_PRES_ALLOWED_NETWORK_NUMBER;
+      chan->connected.id.number.presentation = AST_PRES_ALLOWED_NETWORK_NUMBER;
     }
   }
   /* ToDo: Handle screening. */
@@ -2215,12 +2215,12 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
   }
   res = isup_calling_party_num_encode(chan->cid.cid_num, pres_restr, 0x3 /* network provided */, param, sizeof(param));
 #else
-  if((chan->caller.id.number.presentation & AST_PRES_RESTRICTION) == AST_PRES_RESTRICTED) {
+  if((chan->connected.id.number.presentation & AST_PRES_RESTRICTION) == AST_PRES_RESTRICTED) {
     pres_restr = 1;
   } else {
     pres_restr = 0;
   }
-  res = isup_calling_party_num_encode(chan->caller.id.number.str, pres_restr, 0x3 /* network provided */, param, sizeof(param));
+  res = isup_calling_party_num_encode(chan->connected.id.number.str, pres_restr, 0x3 /* network provided */, param, sizeof(param));
 #endif
   if(res < 0) {
     ast_log(LOG_DEBUG, "Invalid format for calling number, dropped.\n");
@@ -2291,7 +2291,7 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
 #if defined(USE_ASTERISK_1_2) || defined(USE_ASTERISK_1_4) || defined(USE_ASTERISK_1_6)
   ast_verbose(VERBOSE_PREFIX_3 "Sent IAM CIC=%-3d  ANI=%s DNI=%s RNI=%s\n", pvt->cic, pres_restr ? "*****" : chan->cid.cid_num, dni, rdni);
 #else
-  ast_verbose(VERBOSE_PREFIX_3 "Sent IAM CIC=%-3d  ANI=%s DNI=%s RNI=%s\n", pvt->cic,  pres_restr ? "*****" : chan->caller.id.number.str, dni, rdni);
+  ast_verbose(VERBOSE_PREFIX_3 "Sent IAM CIC=%-3d  ANI=%s DNI=%s RNI=%s\n", pvt->cic,  pres_restr ? "*****" : chan->connected.id.number.str, dni, rdni);
 #endif
   return 0;
 }
@@ -2318,9 +2318,9 @@ static int ss7_call(struct ast_channel *chan, char *addr, int timeout) {
 #else
   ast_log(LOG_DEBUG, "SS7 call, addr=%s, cid=%s(0x%x/%s) CIC=%d. linkset '%s'\n",
           (addr ? addr : "<NULL>"),
-          (chan->caller.id.number.str ? chan->caller.id.number.str : "<NULL>"),
-          chan->caller.id.number.presentation,
-          ast_describe_caller_presentation(chan->caller.id.number.presentation),
+          (chan->connected.id.number.str ? chan->connected.id.number.str : "<NULL>"),
+          chan->connected.id.number.presentation,
+          ast_describe_caller_presentation(chan->connected.id.number.presentation),
 	  pvt->cic, pvt->link->linkset->name);
 #endif
 
