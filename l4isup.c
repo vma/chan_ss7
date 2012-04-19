@@ -1832,8 +1832,10 @@ static void handle_complete_address(struct ss7_chan *pvt)
   if(iam->ani.present) {
     chan->connected.id.number.str = strdup(iam->ani.num);
     if(iam->ani.restricted) {
+      chan->connected.id.name.presentation = AST_PRES_PROHIB_NETWORK_NUMBER;
       chan->connected.id.number.presentation = AST_PRES_PROHIB_NETWORK_NUMBER;
     } else {
+      chan->connected.id.name.presentation = AST_PRES_ALLOWED_NETWORK_NUMBER;
       chan->connected.id.number.presentation = AST_PRES_ALLOWED_NETWORK_NUMBER;
     }
   }
