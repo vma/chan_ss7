@@ -1844,6 +1844,7 @@ static void handle_complete_address(struct ss7_chan *pvt)
     /* ToDo: implement redirection reason in Asterisk, and handle it here. */
     chan->redirecting.from.number.str = strdup(iam->rni.num);
   }
+  chan->connected.ani = chan->connected.id;
 #endif
   handle_redir_info(chan, &iam->redir_inf);
   if(iam->gni.ani.present)
