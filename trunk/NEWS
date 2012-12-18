@@ -1,7 +1,7 @@
 This is the NEWS for chan_ss7. This version is maintained by Anders Baekgaard (ab@netfors.com).
 Please send bug reports, feature requests etc. to chan_ss7@netfors.com.
 
-Specfication for version 2.1.0
+Specfication for version 2.1.1
  - Compatible with Asterisk 1.2.x, 1.4.x, 1.6.x., 1.8.x
  - MTP2 (Q.703) implementation
  - MTP3 (Q.704) implementation (subset).
@@ -15,6 +15,9 @@ Specfication for version 2.1.0
  - Supports multiple hosts (cluster) configuration with load sharing and failover.
  - Flexible Dial command syntax for SS7 to allow routing to different linksets.
 
+
+New in version 2.1.1
+- Fixed ALAW/ULAW use for Asterisk <= 1.6
 
 New in version 2.1.0
 - Compatible with Asterisk 1.8.x (input from www.nethemba.com)
