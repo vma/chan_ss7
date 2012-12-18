@@ -2579,9 +2579,9 @@ static struct ast_frame *ss7_read(struct ast_channel * chan) {
   pvt->frame.frametype = AST_FRAME_VOICE;
 #if defined(USE_ASTERISK_1_2) || defined(USE_ASTERISK_1_4) || defined(USE_ASTERISK_1_6)
   if (variant(pvt) == ANSI_SS7)
-    pvt->frame.subclass = AST_FORMAT_ALAW;
-  else
     pvt->frame.subclass = AST_FORMAT_ULAW;
+  else
+    pvt->frame.subclass = AST_FORMAT_ALAW;
 #else
   if (variant(pvt) == ANSI_SS7)
     pvt->frame.subclass.codec = AST_FORMAT_ULAW;
@@ -4853,9 +4853,9 @@ static void init_pvt(struct ss7_chan *pvt, struct link* link, int cic) {
   pvt->frame.frametype = AST_FRAME_VOICE;
 #if defined(USE_ASTERISK_1_2) || defined(USE_ASTERISK_1_4) || defined(USE_ASTERISK_1_6)
   if (variant(pvt) == ANSI_SS7)
-    pvt->frame.subclass = AST_FORMAT_ALAW;
-  else
     pvt->frame.subclass = AST_FORMAT_ULAW;
+  else
+    pvt->frame.subclass = AST_FORMAT_ALAW;
 #else
   if (variant(pvt) == ANSI_SS7) {
     pvt->frame.subclass.codec = AST_FORMAT_ULAW;
