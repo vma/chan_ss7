@@ -1,7 +1,7 @@
 # INSTALL_PREFIX may be overridden to install elsewhere from /usr.
 INSTALL_PREFIX = /usr/local/ss7
 
-VERSION=2.1.1b
+VERSION=2.1.2
 
 # INCLUDE may be overridden to find asterisk and zaptel includes in
 # non-standard places.
