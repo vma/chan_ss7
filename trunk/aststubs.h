@@ -90,12 +90,12 @@ void ast_verbose(const char *fmt, ...)
   __attribute__ ((format (printf, 1, 2)));
 
 typedef int (*ast_sched_cb)(const void *data);
-struct sched_context *mtp_sched_context_create(void);
-void mtp_sched_context_destroy(struct sched_context *con);
-int mtp_sched_add(struct sched_context *con, int when, ast_sched_cb callback, void *data);
-int mtp_sched_del(struct sched_context *con, int id);
-int mtp_sched_runq(struct sched_context *con);
-int mtp_sched_wait(struct sched_context *con);
+struct ast_sched_context *mtp_sched_context_create(void);
+void mtp_sched_context_destroy(struct ast_sched_context *con);
+int mtp_sched_add(struct ast_sched_context *con, int when, ast_sched_cb callback, void *data);
+int mtp_sched_del(struct ast_sched_context *con, int id);
+int mtp_sched_runq(struct ast_sched_context *con);
+int mtp_sched_wait(struct ast_sched_context *con);
 struct timeval ast_tvadd(struct timeval a, struct timeval b);
 
 #ifndef AST_MUTEX_DEFINE_STATIC

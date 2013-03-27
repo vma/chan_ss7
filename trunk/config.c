@@ -169,9 +169,9 @@ static struct link* lookup_link(const char* name) {
 
 static int make_group_linksets(void)
 {
-  int j, k, l;
+  int k, l;
 
-  for (k = 0, j = 0; k < this_host->n_spans; k++) {
+  for (k = 0; k < this_host->n_spans; k++) {
     for (l = 0; l < this_host->spans[k].n_links; l++) {
       struct link* link = this_host->spans[k].links[l];
       struct linkset* linkset = link->linkset;

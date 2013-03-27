@@ -22,6 +22,22 @@
  */
 
 
+
+#if defined(USE_ASTERISK_1_2) || defined(USE_ASTERISK_1_4) || defined(USE_ASTERISK_1_6) || defined(USE_ASTERISK_1_8)
+#define ast_sched_context sched_context
+#endif
+
+#ifndef MTP_STANDALONE
+#if defined(USE_ASTERISK_1_2) || defined(USE_ASTERISK_1_4) || defined(USE_ASTERISK_1_6) || defined(USE_ASTERISK_1_8)
+#define mtp_sched_context_create sched_context_create
+#define mtp_sched_context_destroy sched_context_destroy
+#else
+#define mtp_sched_context_create ast_sched_context_create
+#define mtp_sched_context_destroy ast_sched_context_destroy
+#endif
+#endif
+
+
 int timers_wait(void);
 int start_timer(int msec, int (*cb)(const void *), void *data);
 void stop_timer(int tid);

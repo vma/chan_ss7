@@ -72,7 +72,7 @@
 static int receivepipe[2] = {-1, -1};
 static struct lffifo *receivebuf;
 
-static struct sched_context *cluster_sched = NULL;
+static struct ast_sched_context *cluster_sched = NULL;
 static pthread_t cluster_thread = AST_PTHREADT_NULL;
 static int cluster_running = 0;
 
@@ -471,19 +471,19 @@ static void cluster_send_packet(struct receiver* receiver, int targetix, unsigne
 static void cluster_send_packets(struct receiver* receiver, unsigned char* buf, int len)
 {
   int targetix, firstsendix = -1;
-  struct mtp_event* event = (struct mtp_event*) buf;
+  struct mtp_req* req = (struct mtp_req*) buf;
   struct receiver_stat* receiver_stat = &receiver_stats[receiver->receiverix];
 
-  event->seq_no = sequence_number++;
+  req->seq_no = sequence_number++;
   for (targetix = 0; targetix < receiver->n_targets; targetix++) {
     ast_log(LOG_DEBUG, "send packets %s, targetix %d, connected %d\n", receiver->targets[targetix].host->name, targetix, receiver_stat->target[targetix].connected);
     if (receiver_stat->target[targetix].connected) {
       if (firstsendix == -1)
 	firstsendix = targetix;
-      if ((event->typ != MTP_REQ_ISUP_FORWARD) ||
-	  ((event->typ == MTP_REQ_ISUP_FORWARD) && /* Only one other host should forward ISUP packet */
+      if ((req->typ != MTP_REQ_ISUP_FORWARD) ||
+	  ((req->typ == MTP_REQ_ISUP_FORWARD) && /* Only one other host should forward ISUP packet */
 	   (receiver->targets[targetix].host == receiver->targets[firstsendix].host)))
-	if (event->typ == MTP_REQ_ISUP_FORWARD)
+	if (req->typ == MTP_REQ_ISUP_FORWARD)
 	  receiver_stat->target[targetix].forwards += 1;
 	cluster_send_packet(receiver, targetix, buf, len);
     }
@@ -563,7 +563,7 @@ static int cluster_receive_packet(int senderix, int fd)
   host_last_seq_no[hostix] = event->seq_no;
   if (res > 0) {
     ast_log(LOG_DEBUG, "Received event, senderix=%d, hostix=%d, lastseq=%ld, seqno=%d, typ=%d\n", senderix, hostix, host_last_seq_no[hostix], event->seq_no, event->typ);
-    if ((event->typ == MTP_EVENT_ISUP) || (event->typ == MTP_REQ_ISUP_FORWARD)) {
+    if ((event->typ == MTP_EVENT_ISUP) || (req->typ == MTP_REQ_ISUP_FORWARD)) {
       if (isup_event_handler)
 	(*isup_event_handler)(event);
     }
@@ -644,6 +644,7 @@ static void *cluster_thread_main(void *data)
 	  if(fds[i].revents & POLLIN) {
 	    int linkix;
 	    unsigned char fifobuf[1024];
+	    struct mtp_event* event = (struct mtp_event*) &fifobuf;
 	    struct mtp_req* req = (struct mtp_req*) &fifobuf;
 
 	    res = read(fds[i].fd, &linkix, sizeof(linkix));
@@ -659,7 +660,7 @@ static void *cluster_thread_main(void *data)
 	    }
 	    ast_log(LOG_DEBUG, "fifo get res %d, typ %d, linkix %d, link %s\n", res, req->typ, linkix, links[linkix].name);
 	    if (res > 0) {
-	      if ((req->typ == MTP_REQ_ISUP) || (req->typ == MTP_REQ_ISUP_FORWARD) || (req->typ == MTP_EVENT_ISUP)) {
+	      if ((req->typ == MTP_REQ_ISUP) || (req->typ == MTP_REQ_ISUP_FORWARD) || (event->typ == MTP_EVENT_ISUP)) {
 		if (links[linkix].receiver) {
 		  cluster_send_packets(links[linkix].receiver, fifobuf, res);
 		}
@@ -884,7 +885,7 @@ int cluster_init(void (*isup_event_handler_callback)(struct mtp_event*),
             "non-blocking: %s.\n", strerror(errno));
     goto fail;
   }
-  cluster_sched = sched_context_create();
+  cluster_sched = mtp_sched_context_create();
   if(cluster_sched == NULL) {
     ast_log(LOG_ERROR, "Unable to create cluster scheduling context.\n");
     goto fail;
@@ -922,7 +923,7 @@ void cluster_cleanup(void)
   }
 
   if(cluster_sched) {
-    sched_context_destroy(cluster_sched);
+    mtp_sched_context_destroy(cluster_sched);
     cluster_sched = NULL;
   }
   if(receivebuf) {

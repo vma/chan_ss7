@@ -45,8 +45,6 @@
 #define mtp_sched_del ast_sched_del
 #define mtp_sched_runq ast_sched_runq
 #define mtp_sched_wait ast_sched_wait
-#define mtp_sched_context_create sched_context_create
-#define mtp_sched_context_destroy sched_context_destroy
 #define mtp_mutex_lock ast_mutex_lock
 #define mtp_mutex_unlock ast_mutex_unlock
 #include "asterisk/logger.h"
@@ -54,16 +52,15 @@
 #include "asterisk/module.h"
 #include "asterisk/utils.h"
 #include "astversion.h"
-
 #endif
-
-struct sched_context *mtp_sched_context_create(void);
-void mtp_sched_context_destroy(struct sched_context *con);
-
 
 #include "config.h"
 #include "mtp.h"
 #include "utils.h"
+
+struct ast_sched_context *mtp_sched_context_create(void);
+void mtp_sched_context_destroy(struct ast_sched_context *con);
+
 
 #ifdef MTP_STANDALONE
 #undef ast_pthread_create
@@ -90,7 +87,7 @@ static void wakeup_monitor(void)
   }
 }
 
-static struct sched_context *monitor_sched = NULL;
+static struct ast_sched_context *monitor_sched = NULL;
 
 int timers_wait(void)
 {

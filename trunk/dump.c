@@ -68,6 +68,8 @@ static void dump_pcap(FILE *f, struct mtp_event *event)
   res = fwrite(&event->len, sizeof(event->len), 1, f); /* number of bytes of packet in file */
   res = fwrite(&event->len, sizeof(event->len), 1, f); /* actual length of packet */
   res = fwrite(event->buf, 1, event->len, f);
+  if (res <= 0)
+    ast_log(LOG_WARNING, "Unable to write on pcap file, res: %d, error: %s\n", res, strerror(errno));
   fflush(f);
 }
 
@@ -125,6 +127,8 @@ static void init_pcap_file(FILE *f)
   res = fwrite(&sigfigs, sizeof(sigfigs), 1, f);
   res = fwrite(&snaplen, sizeof(snaplen), 1, f);
   res = fwrite(&linktype, sizeof(linktype), 1, f);
+  if (res <= 0)
+    ast_log(LOG_WARNING, "Unable to write on pcap file, res: %d, error: %s\n", res, strerror(errno));
 }
 
 
