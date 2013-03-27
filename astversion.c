@@ -28,10 +28,15 @@
 #include "asterisk/cli.h"
 
 #ifdef AST_MODULE_INFO
-#include "asterisk/version.h"
+//#include "asterisk/ast_version.h"
 #ifdef AST_CLI_DEFINE
 #ifdef AST_CLI_YESNO
+#include "asterisk/file.h"
+#ifdef AST_DIGIT_NONE
+#  define USE_ASTERISK_11
+#else
 #  define USE_ASTERISK_1_8
+#endif
 #else
 #  define USE_ASTERISK_1_6
 #endif
@@ -56,8 +61,12 @@ int main(int argc, char* argv[])
 #ifdef USE_ASTERISK_1_8
   printf("#define USE_ASTERISK_1_8\n");
 #else
+#ifdef USE_ASTERISK_11
+  printf("#define USE_ASTERISK_11\n");
+#else
   fprintf(stderr, "Unknown asterisk version\n");
   return -1;
+#endif
 #endif
 #endif
 #endif

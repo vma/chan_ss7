@@ -514,11 +514,17 @@ void cli_handle(int fd, char* cmd)
       struct ast_cli_args a;
       *(int*) &a.fd = fd;
       *(int*) &a.argc = argc;
+#if defined(USE_ASTERISK_1_2) || defined(USE_ASTERISK_1_4) || defined(USE_ASTERISK_1_6) || defined(USE_ASTERISK_1_8)
       a.argv = argv;
+#else
+      a.argv = (const char*const*) argv;
+#endif
       my_clis[i].handler(&my_clis[i], CLI_HANDLER, &a);
 #endif
       return;
     }
   }
   res = write(fd, result, strlen(result));
+  if (res <= 0)
+    ast_log(LOG_WARNING, "Unable to write on cli fd, res: %d, error: %s\n", res, strerror(errno));
 }

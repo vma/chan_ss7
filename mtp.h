@@ -42,7 +42,11 @@ int mtp_has_inservice_schannels(struct link*);
 int mtp2_slink_inservice(int linkix);
 int cmd_mtp_linkstatus(char* buff, int details, int timeslot);
 int cmd_mtp_data(int fd, int argc, argv_type argv);
-int cmd_testfailover(int fd, int argc, argv_type argv);
+#if defined(USE_ASTERISK_1_2) || defined(USE_ASTERISK_1_4) || defined(USE_ASTERISK_1_6)
+int cmd_testfailover(int fd, int argc, char ** argv);
+#else
+int cmd_testfailover(int fd, int argc, const char * const * argv);
+#endif
 
 int get_receive_pipe(void);
 void mtp_enqueue_control(struct mtp_req *req);

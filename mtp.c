@@ -55,6 +55,7 @@
 #include <dahdi/fasthdlc.h>
 #endif
 
+#include "astversion.h"
 #include "config.h"
 #include "mtp3io.h"
 #include "mtp.h"
@@ -80,8 +81,6 @@
 #define mtp_sched_add ast_sched_add
 #define mtp_sched_del ast_sched_del
 #define mtp_sched_runq ast_sched_runq
-#define mtp_sched_context_create sched_context_create
-#define mtp_sched_context_destroy sched_context_destroy
 #endif
 
 /* NOTE: most of this code is run in the MTP thread, and has realtime
@@ -104,7 +103,8 @@ int testfailover = 0;
 /* This should ONLY be used by the MTP2 thread, otherwise the locking done
    by the sched operations may fatally delay the MTP2 thread because of
    priority inversion. */
-static struct sched_context *mtp2_sched = NULL;
+
+static struct ast_sched_context *mtp2_sched = NULL;
 
 /* Set true to ask mtp thread to stop */
 static int stop_mtp_thread;
@@ -279,7 +279,7 @@ void mtp_enqueue_control(struct mtp_req *req) {
 }
 
 
-static void delete_timer(struct sched_context *con, int id)
+static void delete_timer(struct ast_sched_context *con, int id)
 {
   int res = mtp_sched_del(con, id);
   if (res) {
@@ -336,7 +336,7 @@ int cmd_mtp_data(int fd, int argc, argv_type argv)
   mtp2_t* m = &mtp2_state[0];
 
   for (i = 3; i < argc; i++) {
-    char* p = argv[i];
+    const char* p = argv[i];
     while (*p) {
       char b[3];
       unsigned int v;
@@ -2510,7 +2510,12 @@ int mtp_init(void) {
   return -1;
 }
 
-int cmd_testfailover(int fd, int argc, const char * const * argv) {
+#if defined(USE_ASTERISK_1_2) || defined(USE_ASTERISK_1_4) || defined(USE_ASTERISK_1_6)
+int cmd_testfailover(int fd, int argc, char ** argv)
+#else
+int cmd_testfailover(int fd, int argc, const char * const * argv)
+#endif
+{
   testfailover = 1;
   return 0;
 }

@@ -25,6 +25,8 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
 #include <pthread.h>
 
 #include "asterisk.h"
@@ -50,11 +52,18 @@ char ast_config_AST_CONFIG_DIR[PATH_MAX];
 #undef pthread_mutex_init
 #undef pthread_mutex_lock
 #undef pthread_mutex_unlock
+#undef pthread_mutex_destroy
 #undef pthread_mutex_t
+#undef ast_mutex_init
+#undef ast_mutex_lock
+#undef ast_mutex_unlock
+#undef ast_mutex_destroy
+#undef ast_mutex_t
 #undef ast_calloc
 #define ast_mutex_init(m) pthread_mutex_init(m,0)
 #define ast_mutex_lock pthread_mutex_lock
 #define ast_mutex_unlock pthread_mutex_unlock
+#define ast_mutex_destroy pthread_mutex_destroy
 #define ast_mutex_t pthread_mutex_t
 #define ast_calloc calloc
 
@@ -179,7 +188,7 @@ struct sched {
 	ast_sched_cb callback;        /*!< Callback */
 };
 
-struct sched_context {
+struct ast_sched_context {
 	ast_mutex_t lock;
 	unsigned int eventcnt;                  /*!< Number of events processed */
 	unsigned int schedcnt;                  /*!< Number of outstanding schedule events */
@@ -221,9 +230,9 @@ struct timeval ast_tvadd(struct timeval a, struct timeval b)
 	return a;
 }
 
-struct sched_context *mtp_sched_context_create(void)
+struct ast_sched_context *mtp_sched_context_create(void)
 {
-	struct sched_context *tmp;
+	struct ast_sched_context *tmp;
 
 	if (!(tmp = ast_calloc(1, sizeof(*tmp))))
 		return NULL;
@@ -234,7 +243,7 @@ struct sched_context *mtp_sched_context_create(void)
 	return tmp;
 }
 
-void mtp_sched_context_destroy(struct sched_context *con)
+void mtp_sched_context_destroy(struct ast_sched_context *con)
 {
 	struct sched *s;
 
@@ -256,7 +265,7 @@ void mtp_sched_context_destroy(struct sched_context *con)
 	free(con);
 }
 
-static struct sched *sched_alloc(struct sched_context *con)
+static struct sched *sched_alloc(struct ast_sched_context *con)
 {
 	struct sched *tmp;
 
@@ -274,7 +283,7 @@ static struct sched *sched_alloc(struct sched_context *con)
 	return tmp;
 }
 
-static void sched_release(struct sched_context *con, struct sched *tmp)
+static void sched_release(struct ast_sched_context *con, struct sched *tmp)
 {
 	/*
 	 * Add to the cache, or just free() if we
@@ -290,7 +299,7 @@ static void sched_release(struct sched_context *con, struct sched *tmp)
 		free(tmp);
 }
 
-int mtp_sched_wait(struct sched_context *con)
+int mtp_sched_wait(struct ast_sched_context *con)
 {
 	int ms;
 
@@ -310,7 +319,7 @@ int mtp_sched_wait(struct sched_context *con)
 }
 
 
-static void schedule(struct sched_context *con, struct sched *s)
+static void schedule(struct ast_sched_context *con, struct sched *s)
 {
 	 
 	struct sched *cur = NULL;
@@ -343,7 +352,7 @@ static int sched_settime(struct timeval *tv, int when)
 	return 0;
 }
 
-static int ast_sched_add_variable(struct sched_context *con, int when, ast_sched_cb callback, void *data, int variable)
+static int ast_sched_add_variable(struct ast_sched_context *con, int when, ast_sched_cb callback, void *data, int variable)
 {
 	struct sched *tmp;
 	int res = -1;
@@ -376,12 +385,12 @@ static int ast_sched_add_variable(struct sched_context *con, int when, ast_sched
 	return res;
 }
 
-int mtp_sched_add(struct sched_context *con, int when, ast_sched_cb callback, void *data)
+int mtp_sched_add(struct ast_sched_context *con, int when, ast_sched_cb callback, void *data)
 {
 	return ast_sched_add_variable(con, when, callback, data, 0);
 }
 
-int mtp_sched_del(struct sched_context *con, int id)
+int mtp_sched_del(struct ast_sched_context *con, int id)
 {
 	struct sched *s;
 
@@ -417,7 +426,7 @@ int mtp_sched_del(struct sched_context *con, int id)
 	return 0;
 }
 
-int mtp_sched_runq(struct sched_context *con)
+int mtp_sched_runq(struct ast_sched_context *con)
 {
 	struct sched *current;
 	struct timeval tv;
