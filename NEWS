@@ -2,7 +2,7 @@ This is the NEWS for chan_ss7. This version is maintained by Anders Baekgaard (a
 Please send bug reports, feature requests etc. to chan_ss7@netfors.com.
 
 Specfication for version 2.2.0
- - Compatible with Asterisk 1.2.x, 1.4.x, 1.6.x., 1.8.x, 11.x
+ - Compatible with Asterisk 1.4.x, 1.6.x, 1.8.x, 11.x
  - MTP2 (Q.703) implementation
  - MTP3 (Q.704) implementation (subset).
  - ISUP (Q.76x) implementation (mostly complete).
