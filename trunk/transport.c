@@ -67,6 +67,7 @@
 #define DAHDI_GET_PARAMS ZT_GET_PARAMS
 #define dahdi_bufferinfo zt_bufferinfo
 #define dahdi_dialoperation zt_dialoperation
+#define dahdi_params zt_params
 #else
 #include <dahdi/user.h>
 #define FAST_HDLC_NEED_TABLES
