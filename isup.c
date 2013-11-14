@@ -577,6 +577,21 @@ static int decode_generic_number(unsigned char *p, int len, void *data) {
   return 1;
 }
 
+/* Decode parameter 0x3d "hop counter" (Q.763 (3.80)). */
+static int decode_hop_counter(unsigned char *p, int len, void *data) {
+  struct iam *iam = data;
+
+  if(len < 1) {
+    ast_log(LOG_NOTICE, "Short parameter 'Hop counter', "
+            "len %d < 1.\n", len);
+    return 0;
+  }
+  iam->hop_counter = p[0] & 0x1f;
+  return 1;
+}
+
+
+
 /* Decode raw SIF field into ISUP message.
    Returns true on success, false on error. */
 int decode_isup_msg(struct isup_msg *msg, ss7_variant variant, unsigned char *buf, int len) {
@@ -636,6 +651,7 @@ int decode_isup_msg(struct isup_msg *msg, ss7_variant variant, unsigned char *bu
       clear_isup_phonenum(&msg->iam.rni);
       msg->iam.redir_inf.is_redirect = 0;
       msg->iam.redir_inf.reason = 0;
+      msg->iam.hop_counter = -1;
       if(variant==ANSI_SS7)
 	return param_decode(buf, len,
 			    IP_NATURE_OF_CONNECTION_INDICATORS, 1, decode_noci_contcheck, &msg->iam,
@@ -649,6 +665,7 @@ int decode_isup_msg(struct isup_msg *msg, ss7_variant variant, unsigned char *bu
 			    IP_REDIRECTING_NUMBER, decode_ani_rni, &msg->iam.rni,
 			    IP_REDIRECTION_INFORMATION, decode_redir_inf, &msg->iam.redir_inf,
 			    IP_GENERIC_NUMBER, decode_generic_number, &msg->iam.gni,
+			    IP_HOP_COUNTER, decode_hop_counter, &msg->iam,
 			    0);
       else
 	return param_decode(buf, len,
@@ -663,6 +680,7 @@ int decode_isup_msg(struct isup_msg *msg, ss7_variant variant, unsigned char *bu
 			    IP_REDIRECTING_NUMBER, decode_ani_rni, &msg->iam.rni,
 			    IP_REDIRECTION_INFORMATION, decode_redir_inf, &msg->iam.redir_inf,
 			    IP_GENERIC_NUMBER, decode_generic_number, &msg->iam.gni,
+			    IP_HOP_COUNTER, decode_hop_counter, &msg->iam,
 			    0);
 
     case ISUP_SAM:

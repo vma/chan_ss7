@@ -439,7 +439,19 @@ static void mtp_enqueue_isup_packet(struct link* link, int cic, unsigned char *m
 		(is_combined_linkset(linkset, &linksets[lsi]))) {
 	      if (six - n_slinks < linksets[lsi].n_slinks) {
 		slink = linksets[lsi].slinks[six - n_slinks];
-		break;
+		if (slink && (*slink->mtp3server_host) && (slink->mtp3fd == -1))
+		  slink = NULL;
+		else
+		  break;
+	      }
+	      if (!slink) {
+		int i;
+		for (i = 0; (i < linksets[lsi].n_slinks) && !slink; i++) {
+		  slink = linksets[lsi].slinks[i];
+		  if (slink && (*slink->mtp3server_host) && (slink->mtp3fd == -1)) {
+		    slink = NULL;
+		  }
+		}
 	      }
 	      n_slinks += linksets[lsi].n_slinks;
 	    }
@@ -1935,6 +1947,11 @@ static void handle_complete_address(struct ss7_chan *pvt)
     snprintf(tmr, sizeof(tmr), "0x%02x", iam->trans_medium);
     pbx_builtin_setvar_helper(chan, "__SS7_TMR", tmr);
   }
+  if (iam->hop_counter != -1) {
+    char h[6];
+    snprintf(h, sizeof(h), "%d", iam->hop_counter);
+    pbx_builtin_setvar_helper(chan, "__SS7_HOP_COUNTER", h);
+  }
 
   if (!pvt->link->linkset->use_connect) {
     isup_send_acm(pvt);
@@ -2368,6 +2385,18 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
     }
     param[1] = ((reason & 0x0F) << 4) | (rcount & 0x07);   /* redirecting reason, counter */
     isup_msg_add_optional(msg, sizeof(msg), &current, IP_REDIRECTION_INFORMATION, param, 2);
+  }
+  strp = pbx_builtin_getvar_helper(chan, "SS7_HOP_COUNTER");
+  if (strp) {
+    char *endptr;
+    unsigned long val = strtoul(strp, &endptr, 0);
+    if ((strp == endptr) || val > 0x1f)
+      ast_log(LOG_NOTICE, "Invalid hop counter value '%ld' "
+	      "in SS7_HOP_COUNTER variable.\n", val);
+    else {
+      param[0] = (val & 0x1f);
+      isup_msg_add_optional(msg, sizeof(msg), &current, IP_HOP_COUNTER, param, 1);
+    }
   }
 
   /* End and send the message. */
