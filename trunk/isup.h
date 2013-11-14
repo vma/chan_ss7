@@ -67,6 +67,7 @@ enum isup_parameter_code {
   IP_BACKWARD_CALL_INDICATORS = 0x11,                         /* (3.5) */
   IP_CAUSE_INDICATORS = 0x12,                                 /* (3.12) */
   IP_REDIRECTION_INFORMATION = 0x13,                          /* (3.45) */
+  IP_HOP_COUNTER = 0x3d,                                      /* (3.80) */
   IP_CIRCUIT_GROUP_SUPERVISION_MESSAGE_TYPE_INDICATOR = 0x15, /* (3.13) */
   IP_RANGE_AND_STATUS = 0x16,                                 /* (3.43) */
   IP_EVENT_INFORMATION = 0x24,                                /* (3.21) */
@@ -138,6 +139,7 @@ struct isup_msg {
       struct generic_number gni;
       int contcheck;
       int echocontrol;
+      int hop_counter;
       unsigned char trans_medium;
     } iam;
     struct {
