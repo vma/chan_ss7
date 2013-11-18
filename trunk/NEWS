@@ -1,7 +1,7 @@
 This is the NEWS for chan_ss7. This version is maintained by Anders Baekgaard (ab@netfors.com).
 Please send bug reports, feature requests etc. to chan_ss7@netfors.com.
 
-Specfication for version 2.3.0
+Specfication for version 2.3.1
  - Compatible with Asterisk 1.4.x, 1.6.x, 1.8.x, 11.x
  - MTP2 (Q.703) implementation
  - MTP3 (Q.704) implementation (subset).
@@ -15,6 +15,9 @@ Specfication for version 2.3.0
  - Supports multiple hosts (cluster) configuration with load sharing and failover.
  - Flexible Dial command syntax for SS7 to allow routing to different linksets.
 
+
+New in version 2.3.1
+- Support both normal and emergency link alignment procedures
 
 New in version 2.3.0
 - Support for hop counter - SS7_HOP_COUNTER

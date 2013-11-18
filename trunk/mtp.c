@@ -124,6 +124,13 @@ struct lffifo *sendbuf[MAX_LINKSETS];
 struct lffifo *receivebuf;
 struct lffifo *controlbuf;
 
+enum { SIO, /* Out of alignent */
+       SIN, /* Normal alignment */
+       SIE, /* Emergency alignment */
+       SIOS, /* Out of service */
+       SIPO, /* Processor outage */
+       SIB, /* Busy  */
+};
 
 typedef struct mtp2_state {
 
@@ -204,6 +211,8 @@ typedef struct mtp2_state {
   int retrans_last_acked;
   /* Last sequence number sent to peer. */
   int retrans_last_sent;
+  /* Use emergency or normal alignment */
+  int emergency_alignment;
   /* Counter for signal unit/alignment error rate monitors (Q.703 (10)). */
   int error_rate_mon;
   /* Counters matching the D and N values of the error rate monitors. */
@@ -616,9 +625,9 @@ static void t4_start(mtp2_t *m)
   int v;
   t4_stop(m);
   switch (variant(m)) {
-  case ITU_SS7: v = 500; break;
-  case ANSI_SS7: v = 600; break;
-  case CHINA_SS7: v = 500; break;
+  case ITU_SS7: v = m->emergency_alignment ? 500 : 8000; break;
+  case ANSI_SS7: v = m->emergency_alignment ? 600 : 9000; break;
+  case CHINA_SS7: v = m->emergency_alignment ? 500 : 8000; break;
   }
   m->mtp2_t4 = mtp_sched_add(mtp2_sched, v, t4_timeout, m);
 }
@@ -698,7 +707,7 @@ static void mtp_changeover(mtp2_t *m) {
       }
       m->retrans_buf[i].buf[3] = 0;
       m->retrans_buf[i].len = 5; /* Is now a LSSU */
-      m->retrans_buf[i].buf[3] = 2;
+      m->retrans_buf[i].buf[3] = m->emergency_alignment ? 2: 1; /* Emergency/normal alignment */
       i = MTP_NEXT_SEQ(i);
     }
   }
@@ -713,7 +722,7 @@ static void abort_initial_alignment(mtp2_t *m)
   m->state = MTP2_DOWN;
   /* Retry the initial alignment after a small delay. */
   t17_start(m);
-  fifo_log(m, LOG_DEBUG, "Aborted initial alignment on link '%s'.\n", m->name);
+  fifo_log(m, LOG_DEBUG, "Aborted %s initial alignment on link '%s'.\n", m->emergency_alignment ? "emergency" : "normal", m->name);
 }
 
 /* Called on link errors that occur after the link is brought into service and
@@ -740,6 +749,7 @@ static void mtp3_link_fail(mtp2_t *m, int down) {
   /* For now, restart initial alignment after a small delay. */
   if (down) {
     m->state = MTP2_DOWN;
+    m->emergency_alignment = 0;
     t17_start(m);
   }
   else
@@ -749,8 +759,23 @@ static void mtp3_link_fail(mtp2_t *m, int down) {
   fifo_log(m, LOG_DEBUG, "Fail on link '%s'.\n", m->name);
 }
 
-static void start_initial_alignment(mtp2_t *m, char* reason) {
+static void start_initial_alignment(mtp2_t *m, char* reason)
+{
   m->state = MTP2_NOT_ALIGNED;
+  /* Should the link go up in emergency or normal alignment ? */
+  int i, nschannels = 0;
+  for (i = 0; i < n_mtp2_state; i++) {
+    struct mtp2_state* om = &mtp2_state[i];
+    if (m->link && om->link)
+      if ((m->link->linkset == om->link->linkset) ||
+          is_combined_linkset(m->link->linkset, om->link->linkset))
+      {
+        if (om->state == MTP2_INSERVICE || om->state == MTP2_READY)
+          nschannels++;
+      }
+  }
+  /* Normal mode, if a second (or more) channels are available */
+  m->emergency_alignment = (nschannels < 1);
   m->send_fib = 1;
   m->send_bsn = 0x7f;
   m->send_bib = 1;
@@ -764,7 +789,7 @@ static void start_initial_alignment(mtp2_t *m, char* reason) {
   m->emon_ncount = 0;
   m->bsn_errors = 0;
 
-  fifo_log(m, LOG_DEBUG, "Starting initial alignment on link '%s', reason: %s.\n", m->name, reason);
+  fifo_log(m, LOG_DEBUG, "Starting %s initial alignment on link '%s', reason: %s.\n", m->emergency_alignment ? "emergency" : "normal", m->name, reason);
   t2_start(m);
 }
 
@@ -874,10 +899,8 @@ static void mtp2_emon_count_error(mtp2_t *m) {
     }
   } else if(m->state == MTP2_PROVING) {
     (m->error_rate_mon)++;
-    /* ToDo: For now we are always in emergency, but for non
-       emergency, proving is not aborted until error_rate_mon reaches
-       the value of 4 (Q.703 (10.3.4)). */
-    if(m->error_rate_mon >= 1) {
+    int error_rate_mon_limit = m->emergency_alignment ? 1 : 4; /*  Q.703 (10.3.4). */
+    if(m->error_rate_mon >= error_rate_mon_limit) {
       fifo_log(m, LOG_WARNING, "Excessive errors detected in alignment "
 	       "error rate monitor, link failed on link '%s'.\n", m->name);
       abort_initial_alignment(m);
@@ -1094,7 +1117,7 @@ static void mtp2_process_lssu(mtp2_t *m, unsigned char *buf, int fsn, int fib) {
 
   typ = buf[3] & 0x07;
   switch(typ) {
-    case 0:                   /* Status indication 'O' */
+    case SIO:                   /* Status indication 'O' */
       if(m->state == MTP2_NOT_ALIGNED) {
         t2_stop(m);
         t3_start(m);
@@ -1110,9 +1133,10 @@ static void mtp2_process_lssu(mtp2_t *m, unsigned char *buf, int fsn, int fib) {
       }
       break;
 
-    case 1:                   /* Status indication 'N' */
-    case 2:                   /* Status indication 'E' */
+    case SIN:                   /* Status indication 'N' */
+    case SIE:                   /* Status indication 'E' */
       /* ToDo: This shouldn't really be here, I think. */
+      m->emergency_alignment = (typ == 2);
       m->send_bsn = fsn;
       m->send_bib = fib;
 
@@ -1138,7 +1162,7 @@ static void mtp2_process_lssu(mtp2_t *m, unsigned char *buf, int fsn, int fib) {
       }
       break;
 
-    case 3:                   /* Status indication 'OS' */
+    case SIOS:                 /* Status indication 'OS' */
       if(m->state == MTP2_ALIGNED || m->state == MTP2_PROVING) {
         abort_initial_alignment(m);
       } else if(m->state == MTP2_READY) {
@@ -1150,14 +1174,14 @@ static void mtp2_process_lssu(mtp2_t *m, unsigned char *buf, int fsn, int fib) {
       }
       break;
 
-    case 4:                   /* Status indication 'PO' */
+    case SIPO:                /* Status indication 'PO' */
       /* ToDo: Not implemented. */
 /* Don't do this, as the log would explode should this actually happen
    fifo_log(LOG_NOTICE, "Status indication 'PO' not implemented.\n");
 */
       break;
 
-    case 5:                   /* Status indication 'B' */
+    case SIB:                 /* Status indication 'B' */
       /* ToDo: Not implemented. */
       fifo_log(m, LOG_NOTICE, "Status indication 'B' not implemented.\n");
       break;
@@ -1748,7 +1772,7 @@ static void mtp2_pick_frame(mtp2_t *m)
       m->tx_buffer[0] = m->send_bsn | (m->send_bib << 7);
       m->tx_buffer[1] = m->retrans_last_sent | (m->send_fib << 7);
       m->tx_buffer[2] = 1;      /* Length 1, meaning LSSU. */
-      m->tx_buffer[3] = 2;
+      m->tx_buffer[3] = m->emergency_alignment ? 2 : 1; /* 1 is indication 'SIN', 2 is indication 'SIE'. */
       return;
 
     case MTP2_READY:
@@ -2337,6 +2361,7 @@ static void mtp_init_link_data(struct mtp2_state* m) {
   m->sltm_t2 = -1;
 
   m->mtp3_t17 = -1;
+  m->emergency_alignment = 0;
 }
 
 static int mtp_init_link(struct mtp2_state* m, struct link* link, int schannel, int sls) {
