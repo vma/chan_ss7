@@ -3297,7 +3297,7 @@ static struct ss7_chan* reattempt_call(struct ss7_chan *pvt)
   if (newpvt) {
     ast_mutex_lock(&newpvt->lock);
     ast_log(LOG_DEBUG, "Reattempt call: Got cic %d\n", newpvt->cic);
-    ast_channel_tech_pvt_set(chan, pvt);
+    ast_channel_tech_pvt_set(chan, newpvt);
     newpvt->owner = chan;
     ast_mutex_unlock(&newpvt->lock);
     ss7_call(chan, pvt->addr, 0);
