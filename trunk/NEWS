@@ -16,6 +16,9 @@ Specfication for version 2.3.1
  - Flexible Dial command syntax for SS7 to allow routing to different linksets.
 
 
+New in version 2.3.2
+- Fixed bug for reattempt call (dual seizure, CIC blocked)
+
 New in version 2.3.1
 - Support both normal and emergency link alignment procedures
 
