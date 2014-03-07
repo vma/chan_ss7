@@ -253,6 +253,9 @@ typedef struct mtp2_state {
 mtp2_t mtp2_state[MAX_SCHANNELS];
 int n_mtp2_state;
 
+#define MAX_DESTINATION 16
+static struct {int dest, opc;} tfp[MAX_DESTINATION];
+
 /* Get the next sequence number, modulo 128. */
 #define MTP_NEXT_SEQ(x) (((x) + 1) % 128)
 
@@ -713,6 +716,66 @@ static void mtp_changeover(mtp2_t *m) {
   }
 }
 
+
+static void mtp_transfer_prohibited(mtp2_t *m, int opc, int dest)
+{
+  int i;
+  fifo_log(m, LOG_NOTICE, "Received tansfer prohibited message for %d from %d on '%s'\n", dest, opc, m->name);
+  for (i = 0; (i < MAX_DESTINATION) && tfp[i].dest; i++)
+    if ((tfp[i].opc == opc) && (tfp[i].dest == dest))
+      return;
+  if (i == MAX_DESTINATION) {
+    fifo_log(m, LOG_ERROR, "Too many destinations prohibited, max %d\n", MAX_DESTINATION);
+    return;
+  }
+  tfp[i].opc = opc;
+  tfp[i].dest = dest;
+}
+
+
+static void mtp_transfer_allowed(mtp2_t *m, int opc, int dest)
+{
+  int i, j;
+  fifo_log(m, LOG_NOTICE, "Received tansfer allowed message for %d from %d on '%s'\n", dest, opc, m->name);
+  for (i = 0; (i < MAX_DESTINATION) && (tfp[i].opc != opc) && (tfp[i].dest != dest) && tfp[i].dest; i++);
+  if (i == MAX_DESTINATION) {
+    fifo_log(m, LOG_DEBUG, "Received tansfer allowed message for %d from %d on '%s', that is not prohibited - ignored\n", dest, opc, m->name);
+    return;
+  }
+  for (j = MAX_DESTINATION-1; (j > i) && tfp[j].dest == 0; j--);
+  tfp[i] = tfp[j];
+  tfp[j].dest = 0;
+}
+
+
+int mtp_is_transfer_allowed(struct link* link, int dest)
+{
+  int i;
+  mtp2_t *m = link->mtp;
+  int dpc = linkpeerdpc(m);
+
+  for (i = 0; (i < MAX_DESTINATION) && tfp[i].dest; i++)
+    if ((tfp[i].opc == dpc) && (tfp[i].dest == dest))
+      return 0;
+  return 1;
+}
+
+
+static int mtp_is_transfer_allowed_msu(mtp2_t* m, unsigned char* buf)
+{
+  int dpc = 0;
+  switch (variant(m)) {
+  case ITU_SS7:
+    dpc = buf[0] | ((buf[1] & 0x3f) << 8);
+    break;
+  case ANSI_SS7:
+  case CHINA_SS7:
+    dpc = buf[0] | ((buf[1] & 0xff) << 8) | ((buf[2] & 0xff) << 16);
+    break;
+  }
+  return mtp_is_transfer_allowed(m->link, dpc);
+}
+
 /* Called on link errors that occur during initial alignment (before the link
    is in service), and which should cause initial alignment to be aborted. The
    initial alignment to be re-tried after a short delay (MTP3 T17). */
@@ -996,7 +1059,6 @@ static void mtp2_queue_msu(mtp2_t *m, int sio, unsigned char *sif, int len) {
     fifo_log(m, LOG_ERROR, "Got illegal MSU length %d < 2, dropping frame on link '%s'.\n", len, m->name);
     return;
   }
-
   i = MTP_NEXT_SEQ(m->retrans_last_sent);
   if(i == m->retrans_last_acked) {
     fifo_log(m, LOG_WARNING, "MTP retransmit buffer full, MSU lost on link '%s'.\n", m->name);
@@ -1467,6 +1529,7 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
   int h0, h1;
   int slt_pattern_len;
   int dpc, opc, slc;
+  int dest;
   int li;
   int i;
 
@@ -1499,11 +1562,13 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
     case ITU_SS7:
       h0 = buf[8] & 0xf;
       h1 = (buf[8] & 0xf0) >> 4;
+      dest = buf[9] | ((buf[10] & 0xff) << 8);
       break;
     case ANSI_SS7:
     case CHINA_SS7:
       h0 = buf[11] & 0xf;
       h1 = (buf[11] & 0xf0) >> 4;
+      dest = buf[12] | ((buf[13] & 0xff) << 8) | ((buf[14] & 0xff) << 16);
       break;
     }
     	
@@ -1514,6 +1579,25 @@ static void process_msu(struct mtp2_state* m, unsigned char* buf, int len)
       break;
     }
     if (h0 == 1) { /* CHM - changeover management */
+    }
+    else if (h0 == 4) { /* TFM - tansfer prohibited-allowed-restricted */
+      switch (h1) {
+      case 1: /* TFP - transfer prohibited */
+#ifdef ALLOW_TFP
+	mtp_transfer_prohibited(m, opc, dest);
+#endif
+	break;
+      case 3: /* TFR - transfer restricted -national option - ignored */
+	fifo_log(m, LOG_NOTICE, "Received tansfer restricted message for %d from %d on '%s' - ignored\n", dest, opc, m->name);
+	break;
+      case 5: /* TFA - transfer allowed */
+#ifdef ALLOW_TFA
+	mtp_transfer_allowed(m, opc, dest);
+#endif
+	break;
+      default:
+	fifo_log(m, LOG_WARNING, "Received unknown tansfer prohibited-allowed-restricted message %d on '%s'\n", h1, m->name);
+      }
     }
     else if (h0 == 7 && h1 == 1) {
       fifo_log(m, LOG_DEBUG, "Received tra on '%s', sls %d\n", m->name, slc);
@@ -2152,6 +2236,8 @@ void *mtp_thread_main(void *data) {
 	    int subservice = SS7_PROTO_ISUP | (m->subservice << 4);
 	    if ((req->typ != MTP_REQ_ISUP) && (req->typ != MTP_REQ_ISUP_FORWARD))
 	      mtp3_set_sls(variant(m), m->sls, req->buf);
+	    if (!mtp_is_transfer_allowed_msu(m, req->buf))
+	      break;
 	    fifo_log(m, LOG_DEBUG, "Queue MSU, lsi=%d, last_send_ix=%d, linkset=%s, m->link=%s\n", lsi, last_send_ix, linksets[lsi].name, m->link->name);
 	    mtp2_queue_msu(m, subservice, req->buf, req->len);
 	  }
@@ -2164,6 +2250,8 @@ void *mtp_thread_main(void *data) {
 		m = targetm;
 	    }
 	    int subservice = SS7_PROTO_SCCP | (m->subservice << 4);
+	    if (!mtp_is_transfer_allowed_msu(m, req->buf))
+	      break;
 	    fifo_log(m, LOG_DEBUG, "Queue MSU, lsi=%d, last_send_ix=%d, linkset=%s, m->link=%s\n", lsi, last_send_ix, linksets[lsi].name, m->link->name);
 	    mtp2_queue_msu(m, subservice, req->buf, req->len);
 	  }
@@ -2431,6 +2519,7 @@ int mtp_init(void) {
   receivebuf = NULL;
   controlbuf = NULL;
   receivepipe[0] = receivepipe[1] = -1;
+  memset(&tfp, 0, sizeof(tfp));
 
   for (i = 0; i < n_linksets; i++) {
     sendbuf[i] = lffifo_alloc(64000);

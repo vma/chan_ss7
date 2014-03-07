@@ -39,6 +39,7 @@ struct lffifo **mtp_get_send_fifo(void);
 struct lffifo *mtp_get_control_fifo(void);
 void mtp3_put_label(int sls, ss7_variant variant, int opc, int dpc, unsigned char *buf);
 int mtp_has_inservice_schannels(struct link*);
+int mtp_is_transfer_allowed(struct link* link, int dest);
 int mtp2_slink_inservice(int linkix);
 int cmd_mtp_linkstatus(char* buff, int details, int timeslot);
 int cmd_mtp_data(int fd, int argc, argv_type argv);

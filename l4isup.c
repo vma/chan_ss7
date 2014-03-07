@@ -439,6 +439,8 @@ static void mtp_enqueue_isup_packet(struct link* link, int cic, unsigned char *m
 		(is_combined_linkset(linkset, &linksets[lsi]))) {
 	      if (six - n_slinks < linksets[lsi].n_slinks) {
 		slink = linksets[lsi].slinks[six - n_slinks];
+		if (slink && !mtp_is_transfer_allowed(slink, linksets[lsi].dpc))
+		  continue;
 		if (slink && (*slink->mtp3server_host) && (slink->mtp3fd == -1))
 		  slink = NULL;
 		else
