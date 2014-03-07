@@ -54,6 +54,7 @@
 #include "asterisk/dsp.h"
 #include "asterisk/callerid.h"
 #include "asterisk/indications.h"
+#include "asterisk/musiconhold.h"
 #include "asterisk/module.h"
 #include "asterisk/alaw.h"
 #include "asterisk/ulaw.h"
