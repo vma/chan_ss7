@@ -5227,13 +5227,6 @@ void l4isup_event(struct mtp_event* event)
   struct isup_msg isup_msg;
   int res;
 
-#ifdef USE_ASTERISK_11
-  struct ast_format tmpfmt;
-  if (!(ss7_tech.capabilities = ast_format_cap_alloc())) {
-    return;
-  }
-  ast_format_cap_add(ss7_tech.capabilities, ast_format_set(&tmpfmt, AST_FORMAT_ALAW | AST_FORMAT_ULAW, 0));
-#endif
   res = decode_isup_msg(&isup_msg, event->isup.slink->linkset->variant, event->buf, event->len);
   if(!res) {
     /* Q.764 (2.9.5): Discard invalid message.*/
@@ -5261,6 +5254,9 @@ void l4isup_event(struct mtp_event* event)
 
 int isup_init(void) {
   int i, l;
+#ifdef USE_ASTERISK_11
+  struct ast_format tmpfmt;
+#endif
 
   /* Configure CIC ranges, specified in 'channel' lines. */
   ast_log(LOG_DEBUG, "Spans %d, host %s \n", this_host->n_spans, this_host->name);
@@ -5360,8 +5356,19 @@ int isup_init(void) {
 
 #endif
 
+#ifdef USE_ASTERISK_11
+  if (!(ss7_tech.capabilities = ast_format_cap_alloc())) {
+    return -1;
+  }
+  ast_format_cap_add(ss7_tech.capabilities, ast_format_set(&tmpfmt, AST_FORMAT_ALAW | AST_FORMAT_ULAW, 0));
+#endif
+
   if(start_continuity_check_thread()) {
     ast_log(LOG_ERROR, "Unable to start continuity check thread.\n");
+#ifdef USE_ASTERISK_11
+    ast_format_cap_destroy(ss7_tech.capabilities);
+    ss7_tech.capabilities = NULL;
+#endif
     return -1;
   }
 
@@ -5406,6 +5413,11 @@ int isup_cleanup(void) {
   stop_continuity_check_thread();
 
   cluster_cleanup();
+
+#ifdef USE_ASTERISK_11
+    ast_format_cap_destroy(ss7_tech.capabilities);
+    ss7_tech.capabilities = NULL;
+#endif
 
   return 0;
 }
