@@ -1260,6 +1260,16 @@ static int ss7_indicate(struct ast_channel *chan, int condition, const void* dat
     res = -1;
     break;
 #endif
+
+  case AST_CONTROL_HOLD:
+    /* Don't passthrough moh event, always handle it by us */
+    ast_moh_start(chan, data, NULL);
+    break;
+  case AST_CONTROL_UNHOLD:
+    /* Don't passthrough moh event, always handle it by us */
+    ast_moh_stop(chan);
+    break;
+
   default:
     /* Not supported. */
     res = !pvt->has_inband_ind && !pvt->is_digital; /* If there is no indication of in-band information, tell asterisk to generate ringing indication tone */

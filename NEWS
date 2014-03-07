@@ -16,6 +16,9 @@ Specfication for version 2.3.4
  - Flexible Dial command syntax for SS7 to allow routing to different linksets.
 
 
+New in version 2.3.5
+- Support for music on hold (thanks to Igor V. Nikolaev)
+
 New in version 2.3.4
 - Fix for Asterisk 11 media stream format capabilities
 
