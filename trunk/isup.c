@@ -352,8 +352,10 @@ static int decode_redir_inf(unsigned char *p, int len, void *data) {
   redir_inf_ptr->is_redirect = p[0];
   if(len >= 2) {
     redir_inf_ptr->reason = (p[1] >> 4) & 0xf;
+    redir_inf_ptr->count = p[1] & 0x7;
   } else {
     redir_inf_ptr->reason = 0;
+    redir_inf_ptr->count  = 1;
   }
 
   return 1;
