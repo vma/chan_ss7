@@ -1062,16 +1062,11 @@ static int load_config_host(struct ast_config *cfg, const char* cat)
       struct link* link = host->spans[i].links[j];
       for (l = j+1; l < host->spans[i].n_links; l++) {
 	struct link* link1 = host->spans[i].links[l];
-	unsigned int m = (link->schannel.mask & link1->schannel.mask);
+	unsigned int m = ((link->schannel.mask | link->channelmask) & (link1->schannel.mask | link1->channelmask));
 	if (!link->enabled || !link->linkset->enabled || !link1->enabled || !link1->linkset->enabled)
 	  continue;
 	if (m != 0) {
-	  ast_log(LOG_ERROR, "Connector no. %d specified twice for host '%s.' with overlapping signaling time slots: mask: 0x%08x, links: %s and %s\n", host->spans[host->n_spans].connector, host->name, m, link->name, link1->name);
-	  return -1;
-	}
-	m = (link->channelmask & link1->channelmask);
-	if (m != 0) {
-	  ast_log(LOG_ERROR, "Connector no. %d specified twice for host '%s.' with overlapping CIC time slots: mask: 0x%08x\n", host->spans[host->n_spans].connector, host->name, m);
+	  ast_log(LOG_ERROR, "Connector no. %d specified twice for host '%s.' with overlapping signaling time slots: mask: 0x%08x, links: %s and %s\n", host->spans[i].connector, host->name, m, link->name, link1->name);
 	  return -1;
 	}
       }
