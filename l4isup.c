@@ -5221,13 +5221,26 @@ static void isup_block_handler(struct link* link)
 
 void l4isup_inservice(struct link* link)
 {
+  int lsi;
   struct linkset* linkset = link->linkset;
+
   if (!mtp_send_fifo)
     mtp_send_fifo = mtp_get_send_fifo();
   if (!linkset->init_grs_done) {
     send_init_grs(linkset);
     linkset->init_grs_done = 1;
   }
+  for (lsi = 0; lsi < n_linksets; lsi++) {
+    struct linkset* clinkset = &linksets[lsi];
+    if (is_combined_linkset(clinkset, linkset)) {
+      if (!clinkset->init_grs_done) {
+	send_init_grs(clinkset);
+	clinkset->init_grs_done = 1;
+      }
+    }
+  }
+
+
   /* ToDo: maybe also need a reset if all links are down for
      an extended period of time? */
 }
