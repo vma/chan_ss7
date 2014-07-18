@@ -240,8 +240,10 @@ static int make_host_slinks(void)
       if (link->enabled) {
 	llink = link;
 	if ((link->schannel.mask != 0) && (!link->remote)) {
-	  link->slinkix = this_host->n_slinks;
-	  this_host->slinks[this_host->n_slinks++] = link;
+	  if ((!*link->mtp3server_host) || (lookup_host(link->mtp3server_host) == this_host)) {
+	    link->slinkix = this_host->n_slinks;
+	    this_host->slinks[this_host->n_slinks++] = link;
+	  }
 	}
       }
     }

@@ -71,6 +71,9 @@ struct {
   };
 } registry[MAXCLIENTS];
 
+#define ROUTE_ON_CIC 0
+static int route_on_cic = ROUTE_ON_CIC;
+
 void l4sccp_inservice(struct link* link);
 void l4sccp_event(struct mtp_event* event);
 void l4sccp_link_status_change(struct link* link, int up);
@@ -270,8 +273,12 @@ void l4isup_event(struct mtp_event* event)
 	for (i = 0; i < host->n_spans; i++) {
 	  for (l = 0; l < host->spans[i].n_links; l++) {
 	    struct link* link = host->spans[i].links[l];
-	    if (link->linkset == linkset) {
-	      if ((link->first_cic <= cic) && (link->first_cic+32 > cic)) {
+	    struct linkset* linkset1 = link->linkset;
+	    if ((linkset1 == linkset) || is_combined_linkset(linkset1, linkset)) {
+	      ast_log(LOG_DEBUG, "ISUP event, check linkset=%s, linkset->opc=%d, DPC=%d\n", linkset1->name, linkset1->opc, dpc);
+	      if (dpc && linkset1->opc && dpc != linkset1->opc)
+		continue;
+	      if (!route_on_cic || ((link->first_cic <= cic) && (link->first_cic+32 > cic))) {
 		event->isup.slinkix = event->isup.slink->linkix;
 		mtp3_reply(registry[n].peerfd, (void*) event, sizeof(*event)+event->len, (const struct sockaddr*) &registry[n].client, sizeof(registry[n].client));
 		return;

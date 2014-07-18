@@ -123,6 +123,7 @@ int ast_jb_read_conf(struct ast_jb_conf *conf, const char *varname, const char *
 
 
 struct ast_cli_entry;
+void ast_cli(int fd, const char* fmt, ...);
 #ifdef USE_ASTERISK_1_6
 int ast_cli_register_multiple(struct ast_cli_entry *e, int len);
 int ast_cli_unregister_multiple(struct ast_cli_entry *e, int len);

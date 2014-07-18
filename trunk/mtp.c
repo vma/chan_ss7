@@ -717,6 +717,7 @@ static void mtp_changeover(mtp2_t *m) {
 }
 
 
+#ifdef ALLOW_TFP
 static void mtp_transfer_prohibited(mtp2_t *m, int opc, int dest)
 {
   int i;
@@ -731,8 +732,10 @@ static void mtp_transfer_prohibited(mtp2_t *m, int opc, int dest)
   tfp[i].opc = opc;
   tfp[i].dest = dest;
 }
+#endif
 
 
+#ifdef ALLOW_TFA
 static void mtp_transfer_allowed(mtp2_t *m, int opc, int dest)
 {
   int i, j;
@@ -746,14 +749,18 @@ static void mtp_transfer_allowed(mtp2_t *m, int opc, int dest)
   tfp[i] = tfp[j];
   tfp[j].dest = 0;
 }
+#endif
 
 
 int mtp_is_transfer_allowed(struct link* link, int dest)
 {
   int i;
   mtp2_t *m = link->mtp;
-  int dpc = linkpeerdpc(m);
+  int dpc;
 
+  if (!m)
+    return 1;
+  dpc = linkpeerdpc(m);
   for (i = 0; (i < MAX_DESTINATION) && tfp[i].dest; i++)
     if ((tfp[i].opc == dpc) && (tfp[i].dest == dest))
       return 0;
