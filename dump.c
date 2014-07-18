@@ -148,7 +148,7 @@ int init_dump(int fd, const char* fn, int in, int out, int fisu, int lssu, int m
 
   ast_mutex_lock(&dump_mutex);
   if((in && dump_in_fh != NULL) || (out && dump_out_fh != NULL)) {
-    ast_cli(fd, "Dump already running, must be stopped (with 'ss7 stop dump') "
+    ast_cli(fd, "Dump already running, must be stopped (with 'ss7 dump stop') "
             "before new can be started.\n");
     ast_mutex_unlock(&dump_mutex);
     return -1;

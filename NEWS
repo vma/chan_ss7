@@ -16,6 +16,10 @@ Specfication for version 2.3.6
  - Flexible Dial command syntax for SS7 to allow routing to different linksets.
 
 
+New in version 2.3.7
+- Fix locking problem and incorrect number when handling dual seizure
+- Support for multiple servers with multiple OPCs
+
 New in version 2.3.6
 - Support for GRS for combined linksets
 

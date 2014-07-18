@@ -524,42 +524,25 @@ static void mtp_enqueue_isup_forward(struct ss7_chan* pvt, unsigned char *msg, i
 }
 
 /* Deprecated, use find_pvt_with_pc */
-__attribute__((__deprecated__))
-static struct ss7_chan* find_pvt(struct link* slink, int cic)
+static struct ss7_chan* find_pvt_with_pc(struct link* slink, int cic, int dpc, int opc)
 {
   struct linkset* ls;
   int lsi;
 
   ls = slink->linkset;
-  if (ls->cic_list[cic])
-    return ls->cic_list[cic];
-  for (lsi = 0; lsi < n_linksets; lsi++)
-    if (is_combined_linkset(ls, &linksets[lsi]))
-      if (linksets[lsi].cic_list[cic])
-	return linksets[lsi].cic_list[cic];
-  return NULL;
-}
-
-static struct ss7_chan* find_pvt_with_pc(struct link* slink, int cic, int pc)
-{
-  struct linkset* ls;
-  int lsi;
-
-  ls = slink->linkset;
-  if (ls->dpc == pc) {
+  if ((ls->opc == opc) && (ls->dpc == dpc))
     if (ls->cic_list[cic])
       return ls->cic_list[cic];
-    for (lsi = 0; lsi < n_linksets; lsi++)
-      if (is_combined_linkset(ls, &linksets[lsi]))
-        if (linksets[lsi].cic_list[cic])
-          return linksets[lsi].cic_list[cic];
-  } else {
-    for (lsi = 0; lsi < n_linksets; lsi++)
-      if (is_combined_linkset(ls, &linksets[lsi]))
-        if (linksets[lsi].dpc == pc)
-          if (linksets[lsi].cic_list[cic])
-            return linksets[lsi].cic_list[cic];
-  }
+  for (lsi = 0; lsi < n_linksets; lsi++)
+    if (is_combined_linkset(ls, &linksets[lsi]))
+      if ((linksets[lsi].opc == opc) && (linksets[lsi].dpc == dpc))
+	if (linksets[lsi].cic_list[cic])
+	  return linksets[lsi].cic_list[cic];
+  for (lsi = 0; lsi < n_linksets; lsi++)
+    if (is_combined_linkset(ls, &linksets[lsi]))
+      if (linksets[lsi].dpc == dpc)
+	if (linksets[lsi].cic_list[cic])
+	  return linksets[lsi].cic_list[cic];
   return NULL;
 }
 
@@ -2309,7 +2292,6 @@ static int isup_send_iam(struct ast_channel *chan, char *addr, char *rdni, char 
   if(res < 0) {
     ast_log(LOG_NOTICE, "Invalid format for phonenumber '%s'.\n", dni);
     request_hangup(chan, AST_CAUSE_INVALID_NUMBER_FORMAT);
-    ast_mutex_unlock(&pvt->lock);
     return -1;
   }
   isup_msg_add_variable(msg, sizeof(msg), &varptr, &current, param, res);
@@ -2438,7 +2420,7 @@ static int ss7_call(struct ast_channel *chan, const char *raddr, int timeout)
 #if defined(USE_ASTERISK_1_2) || defined(USE_ASTERISK_1_4) || defined(USE_ASTERISK_1_6) || defined(USE_ASTERISK_1_8)
   char *sep = strchr(addr, '/');
 #else
-  char *addr = ast_strdupa(raddr);
+  char *addr = ast_strdup(raddr);
   char *sep = strchr(addr, '/');
 #endif
   char rdni[100];
@@ -3184,7 +3166,7 @@ static void process_circuit_message(struct link* slink,
     return;
   }
   lock_global();
-  pvt = find_pvt_with_pc(slink, cic, inmsg->opc);
+  pvt = find_pvt_with_pc(slink, cic, inmsg->opc, inmsg->dpc);
   ast_log(LOG_DEBUG, "Process circuit message %s, CIC=%d, state=%d, reset_done=%d\n", isupmsg(inmsg->typ), cic, pvt->state, pvt->reset_done);
   if(!pvt->equipped) {
     ast_log(LOG_ERROR, "Received CIC=%d for not equipped circuit (typ=%s), link '%s'.\n", cic, isupmsg(inmsg->typ), slink->name);
@@ -3258,7 +3240,7 @@ static void process_circuit_group_message(struct link* slink,
     return;
   }
   lock_global();
-  pvt = find_pvt_with_pc(slink, cic, inmsg->opc);
+  pvt = find_pvt_with_pc(slink, cic, inmsg->opc, inmsg->dpc);
   if(!(pvt->equipped || (inmsg->typ == ISUP_CGA) || (inmsg->typ == ISUP_CUA) || (inmsg->typ == ISUP_GRA))) {
     ast_log(LOG_ERROR, "Received CIC=%d for not equipped circuit (typ=%s), link '%s'.\n", cic, isupmsg(inmsg->typ), slink->name);
     unlock_global();
@@ -4344,14 +4326,14 @@ static void proxy_process_isup_message(struct link* slink, struct isup_msg *inms
     /* Host deals with message itself, cluster module has sent it */
   }
   {
-    unsigned char event_buf[MTP_EVENT_MAX_SIZE];
-    struct mtp_event *event = (struct mtp_event *)event_buf;
-    event->typ = MTP_EVENT_ISUP;
-    event->isup.slink = slink;
-    event->isup.link = slink;
-    event->len = len;
-    memcpy(event->buf, buf, event->len);
-    cluster_mtp_forward((struct mtp_req*) event);/* fixme */
+    unsigned char req_buf[MTP_REQ_MAX_SIZE];
+    struct mtp_req *req = (struct mtp_req *)req_buf;
+    req->typ = MTP_REQ_ISUP;
+    req->isup.slink = slink;
+    req->isup.link = slink;
+    req->len = len;
+    memcpy(req->buf, buf, req->len);
+    cluster_mtp_forward(req);/* fixme */
     return;
   }
   /* Host owning CIC is down, deal with message */
@@ -5194,7 +5176,7 @@ static void isup_event_handler(struct mtp_event* event)
     unlock_global();
     return;
   }
-  pvt = find_pvt_with_pc(linkset->links[0], cic, isup_msg.opc);
+  pvt = find_pvt_with_pc(linkset->links[0], cic, isup_msg.opc, isup_msg.dpc);
   ast_log(LOG_DEBUG, "Got ISUP event, typ=%s, cic=%d, dpc=%d, linkset=%s, pvt=0x%08lx, pvt.eq=%d \n", isupmsg(isup_msg.typ), cic, dpc, linkset->name, (unsigned long int) pvt, pvt ? pvt->equipped : -1);
   unlock_global();
 
@@ -5256,9 +5238,9 @@ void l4isup_event(struct mtp_event* event)
     /* Q.764 (2.9.5): Discard invalid message.*/
     ast_log(LOG_NOTICE, "ISUP decoding error, message discarded. (typ=%d)\n", isup_msg.typ);
   } else {
-    struct ss7_chan* pvt = find_pvt_with_pc(event->isup.slink, isup_msg.cic, isup_msg.opc);
+    struct ss7_chan* pvt = find_pvt_with_pc(event->isup.slink, isup_msg.cic, isup_msg.opc, isup_msg.dpc);
     {
-      ast_log(LOG_WARNING, "Received %s (CIC %d), link '%s'.\n", isupmsg(isup_msg.typ), isup_msg.cic, event->isup.slink->name);
+      ast_log(LOG_NOTICE, "Received %s (OPC=%d, DPC=%d, CIC=%d), link '%s'.\n", isupmsg(isup_msg.typ), isup_msg.opc, isup_msg.dpc, isup_msg.cic, event->isup.slink->name);
     }
 
     if (pvt) {
