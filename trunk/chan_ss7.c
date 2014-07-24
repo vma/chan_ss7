@@ -158,7 +158,7 @@ static void *monitor_main(void *data) {
   fds[0].events = POLLIN;
   while(monitor_running) {
     time(&now);
-    if (lastcheck + 10 < now) {
+    if (lastcheck + 5 < now) {
       rebuild_fds = 1;
       lastcheck = now;
     }
@@ -181,13 +181,16 @@ static void *monitor_main(void *data) {
 		if (link->remote) {
 		  if (link->mtp3fd == -1) {
 		    link->mtp3fd = mtp3_connect_socket(link->mtp3server_host, *link->mtp3server_port ? link->mtp3server_port : "11999");
-		    if (link->mtp3fd != -1)
+		    if (link->mtp3fd != -1) {
 		      res = mtp3_register_isup(link->mtp3fd, link->linkix);
-		    else
-		      poll(NULL, 0, 5000);
-		    if ((link->mtp3fd == -1) || (res == -1))
-		      rebuild_fds += 2;
+		      if (res == -1) {
+			close(link->mtp3fd);
+			link->mtp3fd = -1;
+		      }
+		    }
 		  }
+		  if (link->mtp3fd == -1)
+		    continue;
 		  fds[n_fds].fd = link->mtp3fd;
 		  fds[n_fds++].events = POLLIN|POLLERR|POLLNVAL|POLLHUP;
 		  f = 1;
