@@ -562,7 +562,9 @@ static void mtp_mainloop(void)
 		  }
 		  req->isup.link = NULL;
 		  req->isup.slink = &links[req->isup.slinkix];
-		  ast_log(LOG_DEBUG, "ISUP req, link %s, slinkix %d\n", link->name, req->isup.slinkix);
+		  if (!req->isup.slink->linkset->enabled || !req->isup.slink->linkset->n_slinks)
+		    req->isup.slink = link;
+		  ast_log(LOG_DEBUG, "ISUP req, link %s, slinkix %d, lsi %d\n", link->name, req->isup.slinkix, req->isup.slink->linkset->lsi);
 		  res = lffifo_put(mtp_send_fifo[req->isup.slink->linkset->lsi], (unsigned char *)req, sizeof(struct mtp_req) + req->len);
 		  break;
 		}
