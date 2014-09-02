@@ -656,6 +656,29 @@ int mtp_has_inservice_schannels(struct link* link)
 }
 
 
+int get_inservice_slinkix(int ix)
+{
+  int i;
+  struct link* link = &links[ix];
+  struct linkset* linkset = links[ix].linkset;
+  struct mtp2_state* m = link->mtp;
+
+  if (m)
+    return ix;
+  for (i = 0; i < n_links; i++) {
+    link = &links[i];
+    m = link->mtp;
+    if (!m)
+      continue;
+    if (m->state == MTP2_INSERVICE) {
+      if (is_combined_linkset(link->linkset, linkset))
+	return i;
+    }
+  }
+  return ix;
+  }
+
+
 /* Flush MTP transmit buffer to other link or host */
 static void mtp_changeover(mtp2_t *m) {
   struct mtp2_state* newm = NULL;
@@ -2535,6 +2558,7 @@ int mtp_init(void) {
       goto fail;
     }
   }
+  
   /* Make the receivebuf larger, since it will also carry ast_log
      messages and raw dump data. */
   receivebuf = lffifo_alloc(200000);
