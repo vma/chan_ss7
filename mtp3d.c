@@ -561,7 +561,7 @@ static void mtp_mainloop(void)
 		    break;
 		  }
 		  req->isup.link = NULL;
-		  req->isup.slink = &links[req->isup.slinkix];
+		  req->isup.slink = &links[get_inservice_slinkix(req->isup.slinkix)];
 		  if (!req->isup.slink->linkset->enabled || !req->isup.slink->linkset->n_slinks)
 		    req->isup.slink = link;
 		  ast_log(LOG_DEBUG, "ISUP req, link %s, slinkix %d, lsi %d\n", link->name, req->isup.slinkix, req->isup.slink->linkset->lsi);

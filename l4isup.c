@@ -5380,7 +5380,8 @@ int isup_init(void) {
   if (!(ss7_tech.capabilities = ast_format_cap_alloc())) {
     return -1;
   }
-  ast_format_cap_add(ss7_tech.capabilities, ast_format_set(&tmpfmt, AST_FORMAT_ALAW | AST_FORMAT_ULAW, 0));
+  ast_format_cap_add(ss7_tech.capabilities, ast_format_set(&tmpfmt, AST_FORMAT_ALAW, 0));
+  ast_format_cap_add(ss7_tech.capabilities, ast_format_set(&tmpfmt, AST_FORMAT_ULAW, 0));
 #endif
 
   if(start_continuity_check_thread()) {
