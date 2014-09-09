@@ -5024,7 +5024,7 @@ static void init_pvt(struct ss7_chan *pvt, struct link* link, int cic) {
   pvt->t23 = -1;
   pvt->t35 = -1;
 
-  addr = NULL;
+  pvt->addr = NULL;
   memset(pvt->buffer, 0, sizeof(pvt->buffer));
   memset(&pvt->frame, 0, sizeof(pvt->frame));
   pvt->frame.frametype = AST_FRAME_VOICE;
