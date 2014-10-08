@@ -16,6 +16,9 @@ Specfication for version 2.3.11
  - Flexible Dial command syntax for SS7 to allow routing to different linksets.
 
 
+New in version 2.4.0
+- Fix for missing RDNIS
+
 New in version 2.3.11
 - Fix for Asterisk 11
 
