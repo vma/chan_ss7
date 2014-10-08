@@ -1917,6 +1917,7 @@ static void handle_complete_address(struct ss7_chan *pvt)
   /* ToDo: Handle screening. */
   if(iam->rni.present) {
     /* ToDo: implement redirection reason in Asterisk, and handle it here. */
+    chan->redirecting.from.number.valid = 1;
     chan->redirecting.from.number.str = strdup(iam->rni.num);
   }
 #else
@@ -1937,6 +1938,7 @@ static void handle_complete_address(struct ss7_chan *pvt)
   /* ToDo: Handle screening. */
   if(iam->rni.present) {
     /* ToDo: implement redirection reason in Asterisk, and handle it here. */
+    ast_channel_redirecting(chan)->from.number.valid = 1;
     ast_channel_redirecting(chan)->from.number.str = strdup(iam->rni.num);
   }
 #endif
