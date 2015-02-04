@@ -3393,7 +3393,15 @@ static void process_iam(struct ss7_chan *pvt, struct isup_msg *inmsg)
   remove_from_idlelist(pvt);
   pvt->state = ST_GOT_IAM;
   memcpy(&pvt->iam, &inmsg->iam, sizeof(pvt->iam));
-  check_iam_sam(pvt);
+  if (pvt->iam.contcheck) { /* continuity check required */
+    t36_start(pvt);
+    ast_mutex_lock(&continuity_check_lock);
+    continuity_check_changes = 1;
+    ast_mutex_unlock(&continuity_check_lock);
+  }
+  else {
+    check_iam_sam(pvt);
+  }
   pvt->link->linkset->incoming_calls++;
 }
 
@@ -3898,13 +3906,27 @@ static void process_ccr(struct ss7_chan *pvt, struct isup_msg *inmsg)
 /* Process continuity */
 static void process_cot(struct ss7_chan *pvt, struct isup_msg *inmsg)
 {
+  ast_log(LOG_DEBUG, "Processing COT state=%d, contcheck=%d, CIC=%d\n", pvt->state, pvt->iam.contcheck, pvt->cic);
   if(pvt->state != ST_CONCHECK) {
-    ast_log(LOG_WARNING, "Received COT, but state is not ST_CONCHECK for CIC=%d?!?\n", pvt->cic);
-    return;
+    if (pvt->iam.contcheck == 1) { /* continuity check required */
+      ast_log(LOG_WARNING, "Received COT continuity check required CIC=%d\n", pvt->cic);
+    }
+    else if (pvt->iam.contcheck == 2) { /* continuity check performed on a previous circuit */
+      ast_log(LOG_WARNING, "Received COT continuity check required CIC=%d\n", pvt->cic);
+    }
+    else {
+      ast_log(LOG_WARNING, "Received COT, but state is not ST_CONCHECK for CIC=%d?!?\n", pvt->cic);
+      return;
+    }
   }
-
   t36_clear(pvt);
-  pvt->state = ST_IDLE;
+
+  if ((pvt->state != ST_CONCHECK) && pvt->iam.contcheck) { /* continuity check required */
+    check_iam_sam(pvt);
+  }
+  else {
+    pvt->state = ST_IDLE;
+  }
   ast_mutex_lock(&continuity_check_lock);
   continuity_check_changes = 1;
   ast_mutex_unlock(&continuity_check_lock);

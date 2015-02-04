@@ -320,7 +320,7 @@ static int decode_noci_contcheck(unsigned char *p, int len, void *data) {
             "len %d < 1.\n", len);
     return 0;
   }
-  iam->contcheck   = ((p[0] >> 2) & 0x3) == 0x1;
+  iam->contcheck   = ((p[0] >> 2) & 0x3);
   iam->echocontrol =  (p[0] >> 4) & 0x1;
   return 1;
 }
