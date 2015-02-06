@@ -2741,6 +2741,10 @@ static struct ast_frame *ss7_read(struct ast_channel * chan) {
   }
 #endif
   ast_mutex_lock(&pvt->lock);
+  if ((pvt->state == ST_CONCHECK) || pvt->iam.contcheck) {
+    ast_mutex_unlock(&pvt->lock);
+    return &null_frame;
+  }
 
   memset(&pvt->frame, 0, sizeof(pvt->frame));
   pvt->frame.frametype = AST_FRAME_VOICE;
@@ -4482,7 +4486,7 @@ static void *continuity_check_thread_main(void *data) {
 	  struct ss7_chan* pvt = linkset->cic_list[i];
 	  if (!pvt)
 	    continue;
-	  if (pvt->state == ST_CONCHECK) {
+	  if ((pvt->state == ST_CONCHECK) || pvt->iam.contcheck) {
 	    fds[n].fd = pvt->zaptel_fd;
 	    fds[n].events = POLLIN;
 	    fds_pvt[n] = pvt;
