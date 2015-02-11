@@ -1697,11 +1697,12 @@ static int t36_timeout(const void *arg) {
   struct ss7_chan *pvt = (struct ss7_chan*) arg;
 
   ast_log(LOG_NOTICE, "T36 timeout (waiting for COT or REL) CIC=%d.\n", pvt->cic);
+  pvt->iam.contcheck = 0;
+  pvt->t36 = -1;
   initiate_release_circuit(pvt, AST_CAUSE_NORMAL_TEMPORARY_FAILURE);
   ast_mutex_lock(&continuity_check_lock);
   continuity_check_changes = 1;
   ast_mutex_unlock(&continuity_check_lock);
-  pvt->t36 = -1;
   return 0;                     /* Remove us from sched */
 }
 
@@ -3637,6 +3638,14 @@ static void process_rel(struct ss7_chan *pvt, struct isup_msg *inmsg)
 {
   struct ast_channel* chan = pvt->owner;
 
+  if (pvt->iam.contcheck) { /* continuity check required cancel */
+    ast_log(LOG_WARNING, "REL COT for CIC=%d\n", pvt->cic);
+    t36_clear(pvt);
+    pvt->iam.contcheck = 0;
+    ast_mutex_lock(&continuity_check_lock);
+    continuity_check_changes = 1;
+    ast_mutex_unlock(&continuity_check_lock);
+  }
   if(pvt->state == ST_GOT_REL) {
     /* Didn't see this described in Q.764 (receive a second REL before sending
        first RLC reply). */
