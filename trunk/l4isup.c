@@ -3940,6 +3940,7 @@ static void process_cot(struct ss7_chan *pvt, struct isup_msg *inmsg)
   else {
     pvt->state = ST_IDLE;
   }
+  pvt->iam.contcheck = 0;
   ast_mutex_lock(&continuity_check_lock);
   continuity_check_changes = 1;
   ast_mutex_unlock(&continuity_check_lock);
