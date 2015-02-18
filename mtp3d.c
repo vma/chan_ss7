@@ -278,7 +278,7 @@ void l4isup_event(struct mtp_event* event)
 	      ast_log(LOG_DEBUG, "ISUP event, check linkset=%s, linkset->opc=%d, DPC=%d\n", linkset1->name, linkset1->opc, dpc);
 	      if (dpc && linkset1->opc && dpc != linkset1->opc)
 		continue;
-	      if (!route_on_cic || ((link->first_cic <= cic) && (link->first_cic+32 > cic))) {
+	      if (!route_on_cic || (((link->first_cic <= cic) && (link->first_cic+32 > cic)) && (opc == linkset1->dpc))) {
 		event->isup.slinkix = event->isup.slink->linkix;
 		mtp3_reply(registry[n].peerfd, (void*) event, sizeof(*event)+event->len, (const struct sockaddr*) &registry[n].client, sizeof(registry[n].client));
 		return;
