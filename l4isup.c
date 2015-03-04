@@ -1405,7 +1405,7 @@ static int t9_timeout(const void *arg) {
   struct ss7_chan *pvt = ast_channel_tech_pvt(chan);
 
   ast_log(LOG_NOTICE, "T9 timeout (waiting for ANM).\n");
-  request_hangup(chan, AST_CAUSE_NETWORK_OUT_OF_ORDER);
+  request_hangup(chan, AST_CAUSE_NO_ANSWER);
   pvt->t9 = -1;
   return 0;                     /* Remove us from sched */
 }
