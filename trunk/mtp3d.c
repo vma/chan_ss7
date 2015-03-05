@@ -255,7 +255,6 @@ void l4isup_event(struct mtp_event* event)
   ast_log(LOG_DEBUG, "l4isup_event\n");
   struct isup_msg isup_msg;
   int res;
-  struct link* link = &links[event->regist.isup.slinkix];
 
   res = decode_isup_msg(&isup_msg, event->isup.slink->linkset->variant, event->buf, event->len);
   if(!res) {
@@ -267,7 +266,7 @@ void l4isup_event(struct mtp_event* event)
     int cic = isup_msg.cic;
     int i, n, l;
     struct linkset* linkset = event->isup.slink->linkset;
-    ast_log(LOG_DEBUG, "ISUP event, OPC=%d, DPC=%d, CIC=%d, typ=%s, link=%s\n", opc, dpc,  cic, isupmsg(isup_msg.typ), link->name);
+    ast_log(LOG_DEBUG, "ISUP event, OPC=%d, DPC=%d, CIC=%d, typ=%s, link=%s\n", opc, dpc,  cic, isupmsg(isup_msg.typ), event->isup.slink->name);
     for (n = 0; n < n_registry; n++) {
       if (registry[n].ss7_protocol == SS7_PROTO_ISUP) {
 	struct host* host = lookup_host_by_id(registry[n].host_ix);
@@ -278,7 +277,7 @@ void l4isup_event(struct mtp_event* event)
 	    struct link* link = host->spans[i].links[l];
 	    struct linkset* linkset1 = link->linkset;
 	    if ((linkset1 == linkset) || is_combined_linkset(linkset1, linkset)) {
-	      ast_log(LOG_DEBUG, "ISUP event, check linkset=%s, linkset->opc=%d, DPC=%d, link=%s\n", linkset1->name, linkset1->opc, dpc, link->name);
+	      ast_log(LOG_DEBUG, "ISUP event, check linkset=%s, linkset->opc=%d, DPC=%d, link=%s\n", linkset1->name, linkset1->opc, dpc, event->isup.slink->name);
 	      if (dpc && linkset1->opc && dpc != linkset1->opc)
 		continue;
 	      if (!route_on_cic || (((link->first_cic <= cic) && (link->first_cic+32 > cic)) && (opc == linkset1->dpc))) {
@@ -291,7 +290,7 @@ void l4isup_event(struct mtp_event* event)
 	}
       }
     }
-    ast_log(LOG_ERROR, "Unhandled ISUP event, OPC=%d, DPC=%d, CIC=%d, typ=%s, link=%s\n", opc, dpc,  cic, isupmsg(isup_msg.typ), link->name);
+    ast_log(LOG_ERROR, "Unhandled ISUP event, OPC=%d, DPC=%d, CIC=%d, typ=%s, link=%s\n", opc, dpc,  cic, isupmsg(isup_msg.typ), event->isup.slink->name);
   }
 }
 
